@@ -1,0 +1,6 @@
+pandas
+requests
+sentence-transformers
+spacy
+tqdm
+beautifulsoup4
