@@ -3,7 +3,7 @@ from tqdm.auto import tqdm
 import news_collector
 import Tokinizer
 import argparse
-
+import exAI
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -35,6 +35,8 @@ if __name__ == "__main__":
     parser.add_argument('-i', '--input', default='full', choices=['full', 'short'],
                         help='what to embed: full = news text, short = title + summary, '
                              '~4x faster (default: full)')
+    parser.add_argument('-t', '--topics', default=5, type=int, metavar='N',
+                        help='how many topics to show in the summary (default: 5)')
     args = parser.parse_args()
 
     Tokinizer.load_model(args.model)
@@ -59,3 +61,6 @@ if __name__ == "__main__":
     news = news[news['valid'] >= args.perc]
     news.sort_values(by=['valid'],ascending=False,inplace=True)
     print(news[['date', 'source', 'title', 'valid', 'link']].to_string())
+    print('\nГлавные темы:')
+    topics = exAI.summarize(news, n_topics=args.topics)
+    print(topics[['size', 'valid', 'title', 'link']].to_string())
