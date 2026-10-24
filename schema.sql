@@ -586,10 +586,16 @@ CREATE TRIGGER facet_company_goal_guard BEFORE INSERT OR UPDATE OR DELETE ON fac
 CREATE TRIGGER facet_user_goal_guard BEFORE INSERT OR UPDATE OR DELETE ON facet_preference_goals
  FOR EACH ROW EXECUTE FUNCTION protect_facet_edges();
 
--- Profiles are ready only after all company facets are ready and backed by vectors.
+-- Create profiles as drafts; only UPDATE may publish after checking company facets.
 CREATE FUNCTION validate_profile_publication() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE all_facets integer; ready_facets integer; config_count integer;
 BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status = 'ready' THEN
+      RAISE EXCEPTION 'create company profile as draft, then publish via UPDATE';
+    END IF;
+    RETURN NEW;
+  END IF;
   IF NEW.status = 'ready' AND OLD.status IS DISTINCT FROM 'ready' THEN
     IF NEW.published_at IS NULL THEN NEW.published_at := now(); END IF;
     SELECT count(*),count(*) FILTER(WHERE status='ready'),
@@ -607,7 +613,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END; $$;
-CREATE TRIGGER profile_publish_guard BEFORE UPDATE ON company_profiles
+CREATE TRIGGER profile_publish_guard BEFORE INSERT OR UPDATE ON company_profiles
  FOR EACH ROW EXECUTE FUNCTION validate_profile_publication();
 
 -- Block additional corporate facets after profile was published. Personal facets may be built later.
@@ -697,6 +703,9 @@ CREATE TRIGGER impression_guard BEFORE INSERT ON impressions
 -- Historical content and published snapshots must remain reproducible.
 CREATE FUNCTION prevent_row_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN RAISE EXCEPTION 'append-only table: %', TG_TABLE_NAME; END; $$;
+-- A new model/revision/template/normalization policy requires a new config ID.
+CREATE TRIGGER embedding_configs_append_only BEFORE UPDATE OR DELETE ON embedding_configs
+ FOR EACH ROW EXECUTE FUNCTION prevent_row_mutation();
 CREATE TRIGGER embedding_append_only BEFORE UPDATE OR DELETE ON search_embeddings
  FOR EACH ROW EXECUTE FUNCTION prevent_row_mutation();
 CREATE TRIGGER news_revision_append_only BEFORE UPDATE OR DELETE ON news_revisions
