@@ -149,6 +149,28 @@ class MySourceParser:
 | `fetched_at` | когда новость собрана, ставится автоматически |
 | `language` | язык источника: `ru` или `en` |
 | `description` | лид / анонс от источника |
+| `hash` | md5 от текста новости, считает сама БД. Регистр и лишние пробелы не влияют; при пустом тексте — `NULL` |
+
+По `hash` видно одинаковые тексты под разными ссылками: репосты внутри канала, новость в двух каналах одного издания (`t.me/ifax_go` и `t.me/interfaxonline`), пересказ чужого поста. Найти такие группы:
+
+```sql
+SELECT hash, count(*), string_agg(source, ', ') FROM news
+WHERE hash IS NOT NULL GROUP BY hash HAVING count(*) > 1;
+```
+
+### Обновить схему уже созданной базы
+
+`init.sql` можно запускать повторно: он добавит новые поля (например, `hash`) в существующую таблицу и не тронет данные.
+
+```bash
+docker compose exec -T db psql -U alfa -d alfa_news < init.sql
+```
+
+Для локального PostgreSQL:
+
+```powershell
+psql -h localhost -p 6769 -U alfa -d alfa_news -f init.sql
+```
 
 ## `.env`
 

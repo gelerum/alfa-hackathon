@@ -20,6 +20,20 @@ CREATE TABLE IF NOT EXISTS news (
     description   TEXT                               -- лид / анонс от источника
 );
 
+-- hash — md5 от текста новости. По нему видно одинаковые тексты под разными
+-- ссылками (например, новость на сайте и в Telegram-канале того же издания).
+-- Перед хэшированием текст приводится к нижнему регистру и лишние пробелы
+-- схлопываются, чтобы мелкие различия вёрстки не давали разный хэш.
+-- Пустой текст -> NULL, иначе все новости без текста получили бы один хэш.
+-- Колонка добавляется через ALTER, чтобы повторный запуск init.sql
+-- добавил её и в уже существующую таблицу.
+ALTER TABLE news ADD COLUMN IF NOT EXISTS hash TEXT GENERATED ALWAYS AS (
+    CASE WHEN btrim(body) = '' THEN NULL
+         ELSE md5(lower(regexp_replace(btrim(body), '\s+', ' ', 'g')))
+    END
+) STORED;
+CREATE INDEX IF NOT EXISTS news_hash ON news (hash);
+
 -- Временные фильтры и догрузка «новее последней новости источника»
 CREATE INDEX IF NOT EXISTS news_published_at        ON news (published_at);
 CREATE INDEX IF NOT EXISTS news_source_published_at ON news (source, published_at);
