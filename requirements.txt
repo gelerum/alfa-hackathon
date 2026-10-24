@@ -1,7 +1,6 @@
 pandas
 requests
-scikit-learn
-sentence-transformers
-spacy
-tqdm
 beautifulsoup4
+tqdm
+psycopg[binary]
+python-dotenv

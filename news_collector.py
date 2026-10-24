@@ -364,3 +364,23 @@ def _kommersant_article(link: str) -> Optional[dict]:
         'summary': _meta(soup, 'description'),
         'text': text,
     }
+
+
+from typing import Protocol
+
+class SourceParser(Protocol):
+    name: str
+    def fetch(self, since: datetime.datetime) -> list[dict]: ...
+    # -> [{'source', 'title', 'date', 'link', 'category', 'summary', 'text'}, ...]
+
+class RTParser:
+    name = 'RT'
+    def fetch(self, since):
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            return _get_rt_news(_to_msk_datetime(since), True, pool, True)
+
+class KommersantParser:
+    name = 'Kommersant'
+    def fetch(self, since):
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            return _get_kommersant_news(_to_msk_datetime(since), pool, True)
