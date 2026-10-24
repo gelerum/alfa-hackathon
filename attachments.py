@@ -28,7 +28,7 @@ from urllib.parse import unquote, urljoin, urlparse
 
 import trafilatura
 
-from news_collector import _get
+from common import http_get
 
 MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_PDF_PAGES = 30
@@ -110,7 +110,7 @@ def file_text(url: str) -> tuple[str, Optional[str]]:
     """(имя файла, текст) по ссылке; текст None, если файл не скачать или не прочитать."""
     # cbr.ru без www отвечает на файлы 403, с www — отдаёт
     url = re.sub(r'^(https?://)cbr\.ru/', r'\1www.cbr.ru/', url)
-    response = _get(url, attempts=1)  # приложение не главное — без повторов
+    response = http_get(url, attempts=1)  # приложение не главное — без повторов
     if response is None or not is_file(response):
         return '', None
     return file_name(response), response_to_text(response)

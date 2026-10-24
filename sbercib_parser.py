@@ -18,7 +18,7 @@ import trafilatura
 from bs4 import BeautifulSoup
 
 import attachments
-from news_collector import _get, _parse_dt, _to_msk_datetime
+from common import http_get, parse_dt, to_msk
 
 BASE = 'https://sbercib.ru'
 PAUSE = 1.0     # секунды между запросами
@@ -29,13 +29,13 @@ class SberCIBParser:
     name = 'SberCIB'
 
     def fetch(self, since) -> list[dict]:
-        since = _to_msk_datetime(since)
+        since = to_msk(since)
         items = []
         for page in range(1, MAX_PAGES + 1):
             pages = _next_data(f'{BASE}/publications?page={page}')
             if not pages:
                 break
-            fresh = [p for p in pages if _parse_dt(p['go_live_at']) >= since]
+            fresh = [p for p in pages if parse_dt(p['go_live_at']) >= since]
             items += [self._item(p) for p in fresh]
             # порядок на сайте не строго по дате — листаем, пока не попадётся
             # страница целиком из старых публикаций
@@ -51,7 +51,7 @@ class SberCIBParser:
         return {
             'source': self.name,
             'title': page['title'],
-            'date': _parse_dt(page['go_live_at']),
+            'date': parse_dt(page['go_live_at']),
             'link': f'{BASE}/publication/{page["meta"]["slug"]}',
             'category': categories[0].get('name', '') if categories else '',
             'summary': _strip(page.get('intro_text') or page.get('announcement_description')
@@ -63,7 +63,7 @@ class SberCIBParser:
 
 def _next_data(url: str) -> list[dict]:
     time.sleep(PAUSE)
-    response = _get(url)
+    response = http_get(url)
     if response is None:
         return []
     match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', response.text, re.S)
@@ -74,7 +74,7 @@ def _next_data(url: str) -> list[dict]:
 
 
 def _publication_text(link: str) -> Optional[str]:
-    response = _get(link)
+    response = http_get(link)
     if response is None:
         return None
     text = trafilatura.extract(response.content) or ''

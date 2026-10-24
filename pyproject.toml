@@ -1,0 +1,22 @@
+[project]
+name = "alfa-hack-parser"
+version = "0.1.0"
+description = "Парсер новостей: собирает новости из 70 источников в общую БД и считает их эмбеддинги"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "requests>=2.34,<3",
+    "beautifulsoup4>=4.15,<5",
+    "psycopg[binary]>=3.3,<4",
+    "python-dotenv>=1.2,<2",
+    "feedparser>=6.0,<7",
+    "trafilatura>=2.3,<3",
+    # файлы в новостях: PDF, DOCX, XLSX; pypdfium2 + numpy — рендер сканов для OCR
+    "pypdf>=6.21,<7",
+    "python-docx>=1.2,<2",
+    "openpyxl>=3.1,<4",
+    "pypdfium2>=5.14,<6",
+    "numpy>=2.5,<3",
+]
+
+[tool.uv]
+package = false

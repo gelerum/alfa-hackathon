@@ -14,7 +14,7 @@ from typing import Optional
 from bs4 import BeautifulSoup
 
 import attachments
-from news_collector import _get, _parse_dt, _to_msk_datetime
+from common import http_get, parse_dt, to_msk
 
 TITLE_LENGTH = 150      # заголовка у поста нет — берём начало текста
 MIN_TITLE_LENGTH = 30
@@ -28,12 +28,12 @@ class TelegramParser:
         self.language = language
 
     def fetch(self, since) -> list[dict]:
-        since = _to_msk_datetime(since)
+        since = to_msk(since)
         items = []
         before = None
         for _ in range(MAX_PAGES):
             url = f'https://t.me/s/{self.channel}' + (f'?before={before}' if before else '')
-            response = _get(url)
+            response = http_get(url)
             if response is None:
                 break
             posts = BeautifulSoup(response.text, 'html.parser') \
@@ -75,7 +75,7 @@ class TelegramParser:
         return {
             'source': self.name,
             'title': title,
-            'date': _parse_dt(time_tag['datetime']) if time_tag else None,
+            'date': parse_dt(time_tag['datetime']) if time_tag else None,
             'link': f'https://t.me/{post["data-post"]}',
             'category': '',
             'summary': '',

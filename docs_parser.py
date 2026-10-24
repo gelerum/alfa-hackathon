@@ -20,7 +20,7 @@ import requests
 from bs4 import BeautifulSoup
 
 import attachments
-from news_collector import USER_AGENTS, _get, _to_msk_datetime
+from common import USER_AGENTS, http_get, to_msk
 
 
 class PageDocsParser:
@@ -32,7 +32,7 @@ class PageDocsParser:
         self.language = language
 
     def fetch(self, since) -> list[dict]:
-        since = _to_msk_datetime(since)
+        since = to_msk(since)
         docs = {}  # ссылка на файл -> (заголовок страницы, текст ссылки, страница)
         for page_url, soup in self._pages():
             main = soup.select_one('main') or soup.body
@@ -75,7 +75,7 @@ class PageDocsParser:
             if url in seen:
                 continue
             seen.add(url)
-            response = _get(url)
+            response = http_get(url)
             if response is None:
                 continue
             soup = BeautifulSoup(response.text, 'html.parser')

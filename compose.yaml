@@ -1,39 +1,29 @@
-# Запуск:   docker compose up -d --build     — БД + парсер, который собирает новости постоянно
+# Парсер новостей. БД и embedding-service поднимаются отдельно — из ../infrastructure
+# (общая сеть alpha_default), поэтому сначала: cd ../infrastructure && docker compose up -d
+#
+# Запуск:   docker compose up -d --build     — парсер собирает новости постоянно
 # Логи:     docker compose logs -f parser
 # Один проход без постоянной работы:  docker compose run --rm parser python run_parser.py --once
-# Остановить: docker compose down          — данные в БД сохранятся
-# Пароль базы берётся из DB_PASSWORD в .env
+# Остановить: docker compose down          — данные в БД не затрагиваются
 
 services:
-  db:
-    image: postgres:18
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: alfa
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?задайте DB_PASSWORD в .env}
-      POSTGRES_DB: alfa_news
-    ports:
-      - "6770:5432"   # снаружи на 6770, чтобы не пересекаться с локальным PostgreSQL на 6769
-    volumes:
-      # при первом старте пустой базы postgres сам выполнит init.sql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-      - pgdata:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U alfa -d alfa_news"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-
   parser:
     build: .
     # работает постоянно; после падения или перезагрузки Docker поднимется сам
     restart: unless-stopped
+    networks:
+      - backend
     environment:
-      DATABASE_URL: postgresql://alfa:${DB_PASSWORD}@db:5432/alfa_news
+      # те же значения, что в ../infrastructure/.env; из общей сети БД — db:5432
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alfa}:${POSTGRES_PASSWORD:-alfa_dev_password}@db:5432/${POSTGRES_DB:-alfa_hack}
+      # адрес внутри сети задан явно: EMBEDDING_BASE_URL из .env — для запуска на хосте
+      EMBEDDING_BASE_URL: http://embeddings:8000
+      # должен совпадать с ключом конфигурации у профайлера
+      EMBEDDING_CONFIG_KEY: ${EMBEDDING_CONFIG_KEY:-qwen3-embedding-0.6b@97b0c614:v1}
+      EMBED_TIME_BUDGET_MINUTES: ${EMBED_TIME_BUDGET_MINUTES:-20}
       PARSE_INTERVAL_MINUTES: ${PARSE_INTERVAL_MINUTES:-30}   # пауза между проходами
-    depends_on:
-      db:
-        condition: service_healthy
 
-volumes:
-  pgdata:
+networks:
+  backend:
+    external: true
+    name: ${DOCKER_NETWORK:-alpha_default}

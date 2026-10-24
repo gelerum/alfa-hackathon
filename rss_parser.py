@@ -24,7 +24,7 @@ import trafilatura
 from bs4 import BeautifulSoup
 
 import attachments
-from news_collector import _get, _to_msk_datetime
+from common import http_get, to_msk
 
 # Короче этого анонс считаем «не текстом» и идём за полным текстом на страницу
 MIN_BODY_FROM_FEED = 1000
@@ -40,10 +40,10 @@ class RSSParser:
         self.attachments = attachments
 
     def fetch(self, since) -> list[dict]:
-        since = _to_msk_datetime(since)
+        since = to_msk(since)
         items = {}  # link -> новость; одна статья может быть в нескольких лентах
         for url in self.feeds:
-            response = _get(url)
+            response = http_get(url)
             if response is None:
                 continue
             for entry in feedparser.parse(response.content).entries:
@@ -114,7 +114,7 @@ def _html_to_text(html: str) -> str:
 
 
 def _page_text(link: str, with_files: bool = False) -> Optional[str]:
-    response = _get(link)
+    response = http_get(link)
     if response is None:
         return None
     if attachments.is_file(response):  # ссылка новости — сам файл (ЦБ: «Вестник», указания)

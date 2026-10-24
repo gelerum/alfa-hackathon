@@ -11,7 +11,7 @@ from typing import Optional
 from bs4 import BeautifulSoup
 
 import attachments
-from news_collector import _get, _parse_dt, _to_msk_datetime
+from common import http_get, parse_dt, to_msk
 
 ISS = 'https://iss.moex.com/iss'
 MAX_PAGES = 20  # предохранитель: не больше 1000 новостей за запуск
@@ -21,17 +21,17 @@ class MOEXParser:
     name = 'MOEX'
 
     def fetch(self, since) -> list[dict]:
-        since = _to_msk_datetime(since)
+        since = to_msk(since)
         news = []
         for page in range(MAX_PAGES):
-            response = _get(f'{ISS}/sitenews.json?start={page * 50}')
+            response = http_get(f'{ISS}/sitenews.json?start={page * 50}')
             if response is None:
                 break
             block = response.json()['sitenews']
             rows = [dict(zip(block['columns'], row)) for row in block['data']]
             if not rows:
                 break
-            fresh = [r for r in rows if _parse_dt(r['published_at']) >= since]
+            fresh = [r for r in rows if parse_dt(r['published_at']) >= since]
             news += fresh
             if len(fresh) < len(rows):  # дошли до новостей старше since
                 break
@@ -41,7 +41,7 @@ class MOEXParser:
         return [{
             'source': self.name,
             'title': r['title'],
-            'date': _parse_dt(r['published_at']),
+            'date': parse_dt(r['published_at']),
             'link': f'https://www.moex.com/n{r["id"]}',
             'category': r.get('tag') or '',
             'summary': '',
@@ -51,7 +51,7 @@ class MOEXParser:
 
 
 def _body(news_id: int) -> Optional[str]:
-    response = _get(f'{ISS}/sitenews/{news_id}.json')
+    response = http_get(f'{ISS}/sitenews/{news_id}.json')
     if response is None:
         return None
     block = response.json()['content']
