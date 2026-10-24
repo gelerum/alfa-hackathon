@@ -17,11 +17,14 @@ class Master_Parser:
                         datetime.datetime.now(datetime.timezone.utc) - DEFAULT_WINDOW
                 try:
                     items = parser.fetch(since)
+                    stats[parser.name] = self._save(conn, items)
+                    conn.commit()  # каждый источник сохраняется отдельно
                 except Exception as e:  # упал один источник — остальные всё равно собираем
+                    conn.rollback()
                     print(f'{parser.name}: ошибка {e}')
                     stats[parser.name] = 0
                     continue
-                stats[parser.name] = self._save(conn, items)
+                print(f'{parser.name}: +{stats[parser.name]}')
         return stats
 
     def cleanup(self, days: int = 7) -> int:
@@ -45,19 +48,29 @@ class Master_Parser:
         return row[0]
 
     def _save(self, conn, items: list[dict]) -> int:
+        # Источники отдают разный набор полей. Без title и url новость не сохранить
+        # (NOT NULL в init.sql) — такие пропускаем; остальное заполняем как можем.
         rows = [{
-            'title': i['title'],
-            'body': i['text'] or i['summary'] or '',
+            'title': _clean(i['title']),
+            'body': _clean(i.get('text') or i.get('summary')) or '',  # нет текста — лид
             'url': i['link'],
             'source': i['source'],
-            'published_at': i['date'],
-            'description': i['summary'] or None,
-        } for i in items]
+            'published_at': i.get('date'),                             # нет даты — NULL
+            'description': _clean(i.get('summary')) or None,           # нет лида — NULL
+            'language': i.get('language') or 'ru',
+        } for i in items if i.get('title') and i.get('link')]
+        if not rows:
+            return 0
         with conn.cursor() as cur:
             cur.executemany(
-                '''INSERT INTO news (title, body, url, source, published_at, description)
+                '''INSERT INTO news (title, body, url, source, published_at, description, language)
                    VALUES (%(title)s, %(body)s, %(url)s, %(source)s,
-                           %(published_at)s, %(description)s)
+                           %(published_at)s, %(description)s, %(language)s)
                    ON CONFLICT (url) DO NOTHING''',
                 rows)
             return cur.rowcount
+
+
+def _clean(text):
+    # PostgreSQL не принимает символ \x00 в тексте, а на некоторых страницах он встречается
+    return text.replace('\x00', '') if text else text

@@ -4,3 +4,5 @@ beautifulsoup4
 tqdm
 psycopg[binary]
 python-dotenv
+feedparser
+trafilatura

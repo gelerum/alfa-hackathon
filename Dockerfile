@@ -6,7 +6,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY news_collector.py master_parser.py run_parser.py ./
+COPY news_collector.py rss_parser.py telegram_parser.py sources.py \
+     master_parser.py run_parser.py ./
 
 # вывод print/tqdm сразу виден в docker logs, без буферизации
 ENV PYTHONUNBUFFERED=1
