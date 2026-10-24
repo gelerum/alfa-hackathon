@@ -1,0 +1,23 @@
+[project]
+name = "embedding-service"
+version = "0.1.0"
+description = "CPU HTTP API for Qwen3-Embedding-0.6B"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.34,<1",
+    "sentence-transformers>=5,<6",
+    "transformers>=4.51,<5",
+    "torch>=2.6,<3",
+]
+
+[dependency-groups]
+dev = ["httpx>=0.28,<1", "pytest>=8,<10"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
