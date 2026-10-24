@@ -1,10 +1,13 @@
-# Запуск:   docker compose run --rm parser   — собрать новости и залить в БД
-# БД:       docker compose up -d db          — только поднять базу
+# Запуск:   docker compose up -d --build     — БД + парсер, который собирает новости постоянно
+# Логи:     docker compose logs -f parser
+# Один проход без постоянной работы:  docker compose run --rm parser python run_parser.py --once
+# Остановить: docker compose down          — данные в БД сохранятся
 # Пароль базы берётся из DB_PASSWORD в .env
 
 services:
   db:
     image: postgres:18
+    restart: unless-stopped
     environment:
       POSTGRES_USER: alfa
       POSTGRES_PASSWORD: ${DB_PASSWORD:?задайте DB_PASSWORD в .env}
@@ -23,8 +26,11 @@ services:
 
   parser:
     build: .
+    # работает постоянно; после падения или перезагрузки Docker поднимется сам
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://alfa:${DB_PASSWORD}@db:5432/alfa_news
+      PARSE_INTERVAL_MINUTES: ${PARSE_INTERVAL_MINUTES:-30}   # пауза между проходами
     depends_on:
       db:
         condition: service_healthy

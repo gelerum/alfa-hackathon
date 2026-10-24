@@ -1,7 +1,9 @@
 import datetime
 import psycopg
 
-DEFAULT_WINDOW = datetime.timedelta(days=6)  # окно «6 days» с доски, пока как черновое
+# Глубина сбора: не старше 7 дней. Пустая БД заполняется за 7 дней, дальше —
+# только новое; если парсер долго стоял, догружается тоже не глубже 7 дней.
+DEFAULT_WINDOW = datetime.timedelta(days=7)
 
 class Master_Parser:
     def __init__(self, dsn: str, parsers: list):
@@ -13,8 +15,9 @@ class Master_Parser:
         stats = {}
         with psycopg.connect(self.dsn) as conn:
             for parser in self.parsers:
-                since = self._last_pub_date(conn, parser.name) or \
-                        datetime.datetime.now(datetime.timezone.utc) - DEFAULT_WINDOW
+                floor = datetime.datetime.now(datetime.timezone.utc) - DEFAULT_WINDOW
+                last = self._last_pub_date(conn, parser.name)
+                since = max(last, floor) if last else floor
                 try:
                     items = parser.fetch(since)
                     stats[parser.name] = self._save(conn, items)
