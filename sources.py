@@ -1,7 +1,9 @@
 """Список источников для парсинга. Новый источник — новая строка здесь."""
 
-from news_collector import RTParser, KommersantParser
+from docs_parser import PageDocsParser
+from moex_parser import MOEXParser
 from rss_parser import RSSParser
+from sbercib_parser import SberCIBParser
 from telegram_parser import TelegramParser
 
 # Иностранные издания. За пейволлом (fetch_body=False) в body попадает анонс из ленты.
@@ -12,7 +14,8 @@ FOREIGN = [
     RSSParser('Financial Times', ['https://www.ft.com/rss/home',
                                   'https://www.ft.com/world?format=rss'], 'en'),
     RSSParser('The Guardian', ['https://www.theguardian.com/uk/business/rss',
-                               'https://www.theguardian.com/world/rss'], 'en', fetch_body=True),
+                               'https://www.theguardian.com/world/rss'], 'en',
+              fetch_body=True, attachments=True),   # бывают ссылки на документы госорганов
     RSSParser('WSJ', ['https://feeds.content.dowjones.io/public/rss/RSSMarketsMain',
                       'https://feeds.content.dowjones.io/public/rss/WSJcomUSBusiness',
                       'https://feeds.content.dowjones.io/public/rss/RSSWorldNews'], 'en'),
@@ -27,8 +30,6 @@ FOREIGN = [
 
 # Отечественные издания
 RUSSIAN = [
-    RTParser(),
-    KommersantParser(),
     RSSParser('RBC', ['https://rssexport.rbc.ru/rbcnews/news/30/full.rss']),  # полный текст в ленте
     RSSParser('TASS', ['https://tass.ru/rss/v2.xml']),  # страницы рисуются скриптом — только анонс
     RSSParser('Interfax', ['https://www.interfax.ru/rss.asp'], fetch_body=True),
@@ -36,14 +37,22 @@ RUSSIAN = [
     RSSParser('RIA Novosti', ['https://ria.ru/export/rss2/archive/index.xml'], fetch_body=True),
     RSSParser('Smart-Lab', ['https://smart-lab.ru/rss/',          # посты: полный текст в ленте
                             'https://smart-lab.ru/news/rss/']),   # новости: анонс
+    MOEXParser(),       # moex.com/ru/news через API ISS
+    SberCIBParser(),    # sbercib.ru/publications — все рубрики, включая news и report
 ]
 
 # Отдельное внимание. e-disclosure.ru своего RSS не отдаёт — он идёт через
-# канал t.me/edisclosure (Интерфакс-ЦРКИ) ниже.
+# канал t.me/edisclosure (Интерфакс-ЦРКИ) ниже. econs.online и rjmf.econs.online
+# закрыты проверкой на бота — Econs идёт через канал t.me/econsonline.
 SPECIAL = [
     RSSParser('CBR', ['https://www.cbr.ru/rss/RssPress',
                       'https://www.cbr.ru/rss/RssNews',
-                      'https://www.cbr.ru/rss/eventrss'], fetch_body=True),
+                      'https://www.cbr.ru/rss/eventrss'],
+              fetch_body=True, attachments=True),   # прогнозы, «Вестник», указания — в PDF
+    # новые документы в каталоге изданий и в мониторинге предприятий
+    PageDocsParser('CBR documents', ['https://www.cbr.ru/about_br/publ/',
+                                     'https://www.cbr.ru/dkp/mp/'],
+                   subpages_prefix='/about_br/publ/'),
 ]
 
 TELEGRAM_CHANNELS = [
@@ -56,7 +65,7 @@ TELEGRAM_CHANNELS = [
     'Bondholders', 'mozgovikresearch', 'minpromtorg_ru', 'government_rus', 'minfin',
     'selfinvestor', 'minec_russia', 'ifax_go', 'SberInvestmentsPRO', 'martynovtim',
     'profitanet', 'CashflowTime', 'thefinansist', 'gov_korotko', 'edisclosure', 'finside',
-    'mintsifry', 'InsiderMoex', 'arimembers',
+    'mintsifry', 'InsiderMoex', 'arimembers', 'econsonline',
 ]
 TELEGRAM = [TelegramParser(channel) for channel in TELEGRAM_CHANNELS]
 

@@ -6,3 +6,7 @@ psycopg[binary]
 python-dotenv
 feedparser
 trafilatura
+pypdf
+python-docx
+openpyxl
+pypdfium2

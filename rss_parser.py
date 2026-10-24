@@ -6,6 +6,10 @@
 пейволлом (FT, WSJ, NYT, Economist, Forbes) fetch_body выключен: страницы
 отдают 401/403, и в body попадёт анонс из ленты.
 
+Если ссылка новости ведёт прямо на файл (PDF и т. п.), в body попадает текст
+файла. При attachments=True открывается страница каждой новости, и к тексту
+добавляются файлы, приложенные к статье (модуль attachments).
+
 Важно: RSS хранит только последние N материалов (обычно 20–300), истории
 за прошлые дни в нём нет, поэтому парсер стоит запускать регулярно.
 """
@@ -19,6 +23,7 @@ import feedparser
 import trafilatura
 from bs4 import BeautifulSoup
 
+import attachments
 from news_collector import _get, _to_msk_datetime
 
 # Короче этого анонс считаем «не текстом» и идём за полным текстом на страницу
@@ -27,11 +32,12 @@ MIN_BODY_FROM_FEED = 1000
 
 class RSSParser:
     def __init__(self, name: str, feeds: list[str], language: str = 'ru',
-                 fetch_body: bool = False):
+                 fetch_body: bool = False, attachments: bool = False):
         self.name = name
         self.feeds = feeds
         self.language = language
         self.fetch_body = fetch_body
+        self.attachments = attachments
 
     def fetch(self, since) -> list[dict]:
         since = _to_msk_datetime(since)
@@ -49,11 +55,19 @@ class RSSParser:
                     continue
                 items[item['link']] = item
 
-        if self.fetch_body:
+        if self.attachments:
+            # файлы бывают и у статей с длинным анонсом — открываем все страницы
+            need = list(items.values())
+        elif self.fetch_body:
             need = [i for i in items.values()
                     if not i['text'] and len(i['summary']) < MIN_BODY_FROM_FEED]
-            with ThreadPoolExecutor(max_workers=8) as pool:
-                for item, text in zip(need, pool.map(_page_text, [i['link'] for i in need])):
+        else:
+            need = []
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            texts = pool.map(lambda link: _page_text(link, self.attachments),
+                             [i['link'] for i in need])
+            for item, text in zip(need, texts):
+                if text:
                     item['text'] = text
         return list(items.values())
 
@@ -99,9 +113,15 @@ def _html_to_text(html: str) -> str:
     return BeautifulSoup(html, 'html.parser').get_text(' ', strip=True)
 
 
-def _page_text(link: str) -> Optional[str]:
+def _page_text(link: str, with_files: bool = False) -> Optional[str]:
     response = _get(link)
     if response is None:
         return None
+    if attachments.is_file(response):  # ссылка новости — сам файл (ЦБ: «Вестник», указания)
+        return attachments.response_to_text(response)
     # байты, а не .text: trafilatura сама определит кодировку страницы
-    return trafilatura.extract(response.content) or None
+    text = trafilatura.extract(response.content) or ''
+    if with_files:
+        files = attachments.files_to_text(attachments.file_links(response.content, response.url))
+        text = '\n\n'.join(part for part in (text, files) if part)
+    return text or None
