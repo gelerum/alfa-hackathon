@@ -9,14 +9,18 @@ from ..config import Settings
 from ..domain import Candidate, CompanyContext, RankingQuery, RetrievalHit
 from ..errors import RankingError
 
-# Keep this expression identical to news_fts_idx in the shared schema.
+# Matches news_revisions_fts_idx; mutable news text is not historical evidence.
 FTS_DOCUMENT = (
-    "to_tsvector('russian', coalesce(n.title,'') || ' ' || "
-    "coalesce(n.body,'') || ' ' || coalesce(n.description,''))"
+    "to_tsvector('russian', coalesce(r.title,'') || ' ' || "
+    "coalesce(r.body,'') || ' ' || coalesce(r.description,''))"
 )
 NEWS_FILTER = """
-    n.duplicate_of_id IS NULL AND n.fetched_at <= %(known_at)s
-    AND r.recorded_at <= %(known_at)s
+    n.duplicate_of_id IS NULL AND r.recorded_at <= %(known_at)s
+    AND NOT EXISTS (
+        SELECT 1 FROM news_revisions newer WHERE newer.article_id=r.article_id
+        AND newer.recorded_at <= %(known_at)s
+        AND (newer.recorded_at,newer.content_version) > (r.recorded_at,r.content_version)
+    )
     AND (
         (r.published_at IS NULL AND %(include_undated)s)
         OR (r.published_at < %(as_of)s
@@ -27,9 +31,9 @@ NEWS_FILTER = """
 VECTOR_FROM = (
     """
     FROM news_embeddings e
-    JOIN news n ON n.article_id = e.article_id AND n.content_version = e.content_version
+    JOIN news n ON n.article_id = e.article_id
     JOIN news_revisions r
-      ON r.article_id = n.article_id AND r.content_version = n.content_version
+      ON r.article_id = e.article_id AND r.content_version = e.content_version
     WHERE e.embedding_config_id = %(config)s AND e.created_at <= %(known_at)s
       AND vector_norm(e.embedding) > 0 AND
 """
@@ -69,13 +73,12 @@ FTS_SQL = (
             ''
         )::tsquery AS query FROM individual
     )
-    SELECT n.article_id, n.content_version,
+    SELECT r.article_id, r.content_version,
            ts_rank_cd("""
     + FTS_DOCUMENT
     + """, lexical.query) AS score
     FROM news n
-    JOIN news_revisions r
-      ON r.article_id = n.article_id AND r.content_version = n.content_version
+    JOIN news_revisions r ON r.article_id = n.article_id
     CROSS JOIN lexical
     WHERE numnode(lexical.query) > 0
       AND """

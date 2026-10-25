@@ -264,7 +264,15 @@ def _seed_news(connection):
     add_news(connection, "lexical", "Вольфрам дорожает на рынке", (-1, 0, 0))
     add_news(connection, "personal", "АрктическийПорт ограничивает перевозки", (0, 0, 1))
     add_news(connection, "future", "Future article", (1, 0, 0), published=FUTURE)
-    add_news(connection, "late-fetched", "Late fetched article", (1, 0, 0), fetched=FUTURE)
+    add_news(
+        connection,
+        "late-fetched",
+        "Late fetched article",
+        (1, 0, 0),
+        fetched=FUTURE,
+        recorded=FUTURE,
+        embedded=FUTURE,
+    )
     add_news(connection, "late-revision", "Late revision article", (1, 0, 0), recorded=FUTURE)
     add_news(connection, "late-embedding", "Late embedded article", (1, 0, 0), embedded=FUTURE)
     add_news(connection, "undated", "Undated article", (1, 0, 0), published=None)

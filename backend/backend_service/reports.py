@@ -48,6 +48,16 @@ def request_ranking(report):
         "AND n.duplicate_of_id IS NULL ORDER BY n.article_id",
         (report["window_start"], report["window_end"]),
     )
+    vector_index = all_rows(
+        "SELECT e.article_id,e.content_version,e.embedding_config_id,e.created_at "
+        "FROM news_embeddings e JOIN news_revisions r USING(article_id,content_version) "
+        "JOIN news n ON n.article_id=e.article_id AND n.content_version=e.content_version "
+        "WHERE n.duplicate_of_id IS NULL AND r.published_at>=%s AND r.published_at<%s "
+        "AND e.embedding_config_id IN (SELECT embedding_config_id FROM company_context_facets "
+        "WHERE profile_id=%s AND scope='company' AND status='ready') "
+        "ORDER BY e.article_id,e.content_version,e.embedding_config_id",
+        (report["window_start"], report["window_end"], profile["profile_id"]),
+    )
     bank_docs = all_rows(
         "SELECT document_id FROM documents WHERE source_type='bank_analytics' "
         "AND processing_status='ready' AND (published_at IS NULL OR published_at<%s) ORDER BY document_id",
@@ -58,6 +68,7 @@ def request_ranking(report):
             "profile": profile["profile_id"],
             "user": pref["user_context_id"],
             "articles": articles,
+            "vector_index": vector_index,
             "bank_documents": bank_docs,
         }
     )

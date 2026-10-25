@@ -69,6 +69,7 @@ def test_vector_filters_config_revision_duplicates_and_time(database_dsn, seed):
         "counterparty",
         "lexical",
         "personal",
+        "missing-current-revision",
     }
     assert all(len(item.hits) == 2 for item in batch.candidates)
 

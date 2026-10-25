@@ -32,14 +32,22 @@ def assert_source_eligible(source, scope):
         document = one("SELECT * FROM documents WHERE document_id=%s", (source["document_id"],))
         if (
             not document
+            or document["processing_status"] != "ready"
             or document["fetched_at"] > run["started_at"]
             or source["observed_at"] > run["started_at"]
         ):
             raise ValueError("Bank source was not available at agent start")
         if document["external_id"] and one(
-            "SELECT 1 FROM documents WHERE external_id=%s AND processing_status='ready' "
-            "AND fetched_at>%s AND fetched_at<=%s AND (published_at IS NULL OR published_at<%s)",
-            (document["external_id"], document["fetched_at"], run["started_at"], scope.as_of),
+            "SELECT 1 FROM documents d WHERE external_id=%s AND processing_status='ready' "
+            "AND fetched_at>%s AND fetched_at<=%s AND (published_at IS NULL OR published_at<%s) "
+            "AND EXISTS(SELECT 1 FROM rag_chunks c WHERE c.document_id=d.document_id AND c.observed_at<=%s)",
+            (
+                document["external_id"],
+                document["fetched_at"],
+                run["started_at"],
+                scope.as_of,
+                run["started_at"],
+            ),
         ):
             raise ValueError("Bank source has a newer revision in this snapshot")
 

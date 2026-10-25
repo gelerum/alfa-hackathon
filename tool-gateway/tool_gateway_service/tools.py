@@ -238,13 +238,18 @@ def search(scope: AgentScope, name, args: SearchArgs):
         where += " AND c.published_at>=%s"
         params.append(args.published_after)
     if kind == "bank_analytics":
+        run = one("SELECT started_at FROM agent_runs WHERE agent_run_id=%s", (scope.agent_run_id,))
+        known_at = run["started_at"] if run else scope.as_of
         where += (
-            " AND NOT EXISTS(SELECT 1 FROM documents old JOIN documents newer "
+            " AND c.observed_at<=%s AND EXISTS(SELECT 1 FROM documents d WHERE d.document_id=c.document_id "
+            "AND d.processing_status='ready' AND d.fetched_at<=%s) "
+            "AND NOT EXISTS(SELECT 1 FROM documents old JOIN documents newer "
             "ON newer.external_id=old.external_id WHERE old.document_id=c.document_id "
-            "AND newer.processing_status='ready' AND newer.fetched_at>old.fetched_at "
+            "AND newer.processing_status='ready' AND newer.fetched_at>old.fetched_at AND newer.fetched_at<=%s "
+            "AND EXISTS(SELECT 1 FROM rag_chunks nc WHERE nc.document_id=newer.document_id AND nc.observed_at<=%s) "
             "AND (newer.published_at IS NULL OR newer.published_at<%s))"
         )
-        params.append(scope.as_of)
+        params += [known_at, known_at, known_at, known_at, scope.as_of]
     if kind == "news":
         where += (
             " AND EXISTS(SELECT 1 FROM news_revisions r WHERE r.article_id=c.article_id "
@@ -287,13 +292,13 @@ def search(scope: AgentScope, name, args: SearchArgs):
     result, per_doc = [], {}
     for key in sorted(scores, key=lambda k: (-scores[k], k)):
         row = candidates[key]
+        doc = str(row["document_id"] or row["article_id"])
+        if per_doc.get(doc, 0) >= 3:
+            continue
         source = one("SELECT * FROM evidence_sources WHERE source_id=%s", (row["source_id"],))
         try:
             assert_source_eligible(source, scope)
         except ValueError:
-            continue
-        doc = str(row["document_id"] or row["article_id"])
-        if per_doc.get(doc, 0) >= 3:
             continue
         per_doc[doc] = per_doc.get(doc, 0) + 1
         result.append(

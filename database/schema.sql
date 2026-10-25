@@ -192,6 +192,12 @@ CREATE TABLE news_revisions (
   recorded_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(article_id,content_version)
 );
+CREATE INDEX IF NOT EXISTS news_revisions_publication_idx ON news_revisions(published_at DESC);
+CREATE INDEX IF NOT EXISTS news_revisions_snapshot_idx
+  ON news_revisions(article_id,recorded_at DESC,content_version DESC);
+CREATE INDEX IF NOT EXISTS news_revisions_fts_idx ON news_revisions USING gin (
+  to_tsvector('russian',coalesce(title,'') || ' ' || coalesce(body,'') || ' ' || coalesce(description,''))
+);
 CREATE TABLE news_embeddings (
   article_id text NOT NULL, content_version text NOT NULL,
   embedding_config_id uuid NOT NULL REFERENCES embedding_configs(embedding_config_id),

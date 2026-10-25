@@ -3,6 +3,7 @@
 !database/schema.sql
 !database/import.sql
 !database/application.sql
+!database/retrieval_indexes.sql
 !database/df_Uid_data_hack.csv
 !database/df_Uid_payment_hack.csv
 !database/df_Fid_Uid_link_hack.csv
