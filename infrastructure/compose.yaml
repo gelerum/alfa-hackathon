@@ -1,0 +1,73 @@
+name: alpha
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-alfa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alfa_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-alfa_hack}
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ../database/import.sql:/docker-entrypoint-initdb.d/02_import.sql:ro
+      - ../database/df_Uid_data_hack.csv:/csv/df_Uid_data_hack.csv:ro
+      - ../database/df_Uid_payment_hack.csv:/csv/df_Uid_payment_hack.csv:ro
+      - ../database/df_Fid_Uid_link_hack.csv:/csv/df_Fid_Uid_link_hack.csv:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5m
+
+  embeddings:
+    build: ../embedding-service
+    restart: unless-stopped
+    environment:
+      TORCH_NUM_THREADS: ${TORCH_NUM_THREADS:-8}
+      OMP_NUM_THREADS: ${TORCH_NUM_THREADS:-8}
+      MKL_NUM_THREADS: ${TORCH_NUM_THREADS:-8}
+      MAX_INPUT_TOKENS: ${MAX_INPUT_TOKENS:-2048}
+      HF_HOME: /models
+      TOKENIZERS_PARALLELISM: 'false'
+    ports:
+      - '127.0.0.1:${EMBEDDING_PORT:-8001}:8000'
+    volumes:
+      - model_cache:/models
+    healthcheck:
+      test: ['CMD', '.venv/bin/python', '-c', 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=3)']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15m
+
+  searxng:
+    image: ${SEARXNG_IMAGE:-docker.io/searxng/searxng:latest}
+    restart: unless-stopped
+    environment:
+      SEARXNG_BASE_URL: http://localhost:${SEARXNG_PORT:-8080}/
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?Set SEARXNG_SECRET in infrastructure/.env}
+      # The settings bind mount is read-only; do not try to chown it on startup.
+      FORCE_OWNERSHIP: 'false'
+      SEARXNG_PORT: '8080'
+    ports:
+      - '127.0.0.1:${SEARXNG_PORT:-8080}:8080'
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - searxng_cache:/var/cache/searxng
+    healthcheck:
+      # Local readiness only; upstream search engines may still reject requests.
+      test: ['CMD', '/usr/local/searxng/.venv/bin/python', '-c', 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/healthz", timeout=3)']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 1m
+
+volumes:
+  postgres_data:
+  model_cache:
+  searxng_cache:
