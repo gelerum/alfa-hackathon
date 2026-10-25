@@ -17,11 +17,11 @@ FTS_DOCUMENT = (
     "coalesce(n.body,'') || ' ' || coalesce(n.description,''))"
 )
 NEWS_FILTER = """
-    n.duplicate_of_id IS NULL AND n.fetched_at <= %(as_of)s
-    AND r.recorded_at <= %(as_of)s
+    n.duplicate_of_id IS NULL AND n.fetched_at <= %(known_at)s
+    AND r.recorded_at <= %(known_at)s
     AND (
         (n.published_at IS NULL AND %(include_undated)s)
-        OR (n.published_at <= %(as_of)s
+        OR (n.published_at < %(as_of)s
             AND (%(published_after)s::timestamptz IS NULL
                  OR n.published_at >= %(published_after)s::timestamptz))
     )
@@ -32,7 +32,7 @@ VECTOR_FROM = (
     JOIN news n ON n.article_id = e.article_id AND n.content_version = e.content_version
     JOIN news_revisions r
       ON r.article_id = n.article_id AND r.content_version = n.content_version
-    WHERE e.embedding_config_id = %(config)s AND e.created_at <= %(as_of)s
+    WHERE e.embedding_config_id = %(config)s AND e.created_at <= %(known_at)s
       AND vector_norm(e.embedding) > 0 AND
 """
     + NEWS_FILTER
@@ -104,6 +104,7 @@ class NewsSearcher:
         hits: dict[tuple[str, str], list[RetrievalHit]] = defaultdict(list)
         filters = {
             "as_of": query.as_of,
+            "known_at": query.knowledge_as_of or query.as_of,
             "published_after": query.published_after,
             "include_undated": self.settings.include_undated,
         }

@@ -1,2 +1,5 @@
 .env
 *.csv
+!df_Fid_Uid_link_hack.csv
+!df_Uid_data_hack.csv
+!df_Uid_payment_hack.csv

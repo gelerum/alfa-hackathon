@@ -97,6 +97,8 @@ class RankingQuery:
     user_context_id: UUID | None = None
     embedding_config_id: UUID | None = None
     published_after: datetime | None = None
+    knowledge_as_of: datetime | None = None
+    request_id: UUID | None = None
 
 
 @dataclass(frozen=True)

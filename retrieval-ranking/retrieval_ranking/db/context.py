@@ -1,6 +1,7 @@
 """Resolve immutable company/user snapshots before selecting compatible query vectors."""
 
 import json
+from dataclasses import replace
 import math
 from typing import Any
 from uuid import UUID
@@ -25,6 +26,7 @@ class ContextReader:
     ) -> CompanyContext:
         if query.user_context_id is not None and query.user_id is None:
             raise RankingError("invalid_user_context", "user_context_id requires user_id", 422)
+        query = replace(query, as_of=query.knowledge_as_of or query.as_of)
         preferences = self._preferences(connection, query)
         profile = self._profile(connection, query)
         config = self._configuration(connection, profile["profile_id"], query)

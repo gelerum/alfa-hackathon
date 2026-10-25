@@ -188,6 +188,7 @@ CREATE TABLE news_revisions (
   article_id text NOT NULL REFERENCES news(article_id),
   content_version text NOT NULL,
   title text NOT NULL, body text, description text,
+  published_at timestamptz, -- publication date pinned with this revision, distinct from arrival time
   recorded_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(article_id,content_version)
 );

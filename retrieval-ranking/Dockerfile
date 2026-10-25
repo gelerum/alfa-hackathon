@@ -17,7 +17,8 @@ COPY retrieval_ranking ./retrieval_ranking
 COPY main.py ./
 RUN useradd --uid 10001 --create-home app \
     && mkdir -p /app/.cache/huggingface \
-    && chown -R app:app /app/.cache
+    && chown -R app:app /app/.cache \
+    && chmod -R a+rX /app
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=15s --start-period=300s --retries=3 \

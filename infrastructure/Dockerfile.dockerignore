@@ -1,0 +1,14 @@
+.git
+**/.git
+**/.venv
+.venv
+**/__pycache__
+**/.env
+.env
+**/.pytest_cache
+**/.ruff_cache
+**/*.egg-info
+**/build
+**/dist
+*.pdf
+!bank-materials-source/materials/*.pdf

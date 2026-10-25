@@ -19,6 +19,8 @@ class RankRequest(BaseModel):
     profile_id: UUID | None = None
     user_context_id: UUID | None = None
     embedding_config_id: UUID | None = None
+    knowledge_as_of: datetime | None = None
+    request_id: UUID | None = None
 
     def to_query(self) -> RankingQuery:
         return RankingQuery(**self.model_dump())

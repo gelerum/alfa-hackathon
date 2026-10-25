@@ -1,8 +1,15 @@
 name: alpha
 
+# Single entry point for the complete stack, including backend and frontend.
+include:
+  - path: ./application.compose.yaml
+
 services:
   db:
-    image: pgvector/pgvector:pg17
+    image: alpha-database:local
+    build:
+      context: ..
+      dockerfile: infrastructure/database.Dockerfile
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-alfa}
@@ -12,11 +19,6 @@ services:
       - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ../database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
-      - ../database/import.sql:/docker-entrypoint-initdb.d/02_import.sql:ro
-      - ../database/df_Uid_data_hack.csv:/csv/df_Uid_data_hack.csv:ro
-      - ../database/df_Uid_payment_hack.csv:/csv/df_Uid_payment_hack.csv:ro
-      - ../database/df_Fid_Uid_link_hack.csv:/csv/df_Fid_Uid_link_hack.csv:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 5s

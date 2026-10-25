@@ -12,6 +12,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./import.sql:/docker-entrypoint-initdb.d/02_import.sql:ro
+      - ./application.sql:/docker-entrypoint-initdb.d/03_application.sql:ro
       - ./df_Uid_data_hack.csv:/csv/df_Uid_data_hack.csv:ro
       - ./df_Uid_payment_hack.csv:/csv/df_Uid_payment_hack.csv:ro
       - ./df_Fid_Uid_link_hack.csv:/csv/df_Fid_Uid_link_hack.csv:ro

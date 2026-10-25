@@ -50,6 +50,9 @@ class RankingService:
         context_text = render_context(batch.context)
         run_id = uuid4()
         snapshot = self._snapshot(batch.context, context_text, batch.lexical_terms)
+        snapshot["knowledge_as_of"] = (query.knowledge_as_of or query.as_of).isoformat()
+        if query.request_id:
+            snapshot["request_id"] = str(query.request_id)
         self.repository.start_run(run_id, query, batch.context, snapshot)
         try:
             documents = [render_news(candidate) for candidate in batch.candidates]
@@ -112,10 +115,16 @@ class RankingService:
         if query.user_context_id and not query.user_id:
             raise RankingError("invalid_query", "user_context_id requires user_id", 422)
         dates = [query.as_of] + ([query.published_after] if query.published_after else [])
+        if query.knowledge_as_of:
+            dates.append(query.knowledge_as_of)
         if any(value.tzinfo is None or value.utcoffset() is None for value in dates):
             raise RankingError("invalid_query", "Timestamps must include a UTC offset", 422)
-        if query.as_of > datetime.now(UTC):
-            raise RankingError("invalid_query", "as_of must not be in the future", 422)
+        if query.as_of > datetime.now(UTC) or (
+            query.knowledge_as_of and query.knowledge_as_of > datetime.now(UTC)
+        ):
+            raise RankingError("invalid_query", "Cutoffs must not be in the future", 422)
+        if query.knowledge_as_of and query.knowledge_as_of < query.as_of:
+            raise RankingError("invalid_query", "knowledge_as_of must not precede as_of", 422)
         if query.published_after and query.published_after > query.as_of:
             raise RankingError("invalid_query", "published_after must not exceed as_of", 422)
 

@@ -1,0 +1,152 @@
+# Application services included by compose.yaml; run Compose from infrastructure/.
+x-app: &app
+  build:
+    context: ..
+    dockerfile: infrastructure/Dockerfile
+  image: alpha-application:local
+  restart: unless-stopped
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp:size=536870912,mode=1777
+  environment: &environment
+    DATABASE_URL: ${DATABASE_URL:-postgresql://alfa:alfa_dev_password@db:5432/alfa_hack}
+    INTERNAL_TOKEN: ${INTERNAL_TOKEN:?Set INTERNAL_TOKEN in infrastructure/.env}
+    ADMIN_TOKEN: ${ADMIN_TOKEN:?Set ADMIN_TOKEN in infrastructure/.env}
+    STORAGE_DIR: /data
+    EMBEDDING_BASE_URL: http://embeddings:8000
+    EMBEDDING_CONFIG_KEY: ${EMBEDDING_CONFIG_KEY:-qwen3-embedding-0.6b@97b0c614:v1}
+    GATEWAY_URL: http://tool-gateway:8000
+    SEARXNG_BASE_URL: http://searxng:8080
+    BANK_SOURCE_URL: http://bank-materials-source:8000
+    RANKER_URL: ${RANKER_URL:-http://retrieval-ranking:8000/rank}
+    RANKER_TIMEOUT_SECONDS: ${RANKER_TIMEOUT_SECONDS:-900}
+    INSIGHT_CALLBACK_URL: http://insight-agent:8000/runs
+    OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    OPENAI_MODEL: ${OPENAI_MODEL:-qwen3.6-35b-a3b}
+    OPENAI_MAX_TOKENS: ${OPENAI_MAX_TOKENS:-6000}
+    AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:-8}
+    AGENT_MAX_TOOL_CALLS: ${AGENT_MAX_TOOL_CALLS:-140}
+    AGENT_TIMEOUT_SECONDS: ${AGENT_TIMEOUT_SECONDS:-600}
+    AGENT_MAX_CONTEXT_BYTES: ${AGENT_MAX_CONTEXT_BYTES:-90000}
+    AGENT_MAX_TOTAL_TOKENS: ${AGENT_MAX_TOTAL_TOKENS:-80000}
+    TIMEZONE: Europe/Moscow
+  volumes:
+    - documents_data:/data
+  depends_on:
+    db:
+      condition: service_healthy
+  healthcheck:
+    test: ['CMD', 'python', '-c', 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health",timeout=3)']
+    interval: 15s
+    timeout: 5s
+    retries: 5
+
+services:
+  parser:
+    build: ../parser
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://alfa:alfa_dev_password@db:5432/alfa_hack}
+      EMBEDDING_BASE_URL: http://embeddings:8000
+      EMBEDDING_CONFIG_KEY: ${EMBEDDING_CONFIG_KEY:-qwen3-embedding-0.6b@97b0c614:v1}
+      PARSE_INTERVAL_MINUTES: ${PARSE_INTERVAL_MINUTES:-30}
+    depends_on:
+      db:
+        condition: service_healthy
+  retrieval-ranking:
+    build: ../retrieval-ranking
+    restart: unless-stopped
+    init: true
+    environment:
+      RETR_RANK_DATABASE_URL: ${DATABASE_URL:-postgresql://alfa:alfa_dev_password@db:5432/alfa_hack}
+      RETR_RANK_MODEL_CACHE_DIR: /app/.cache/huggingface/hub
+      RETR_RANK_TORCH_THREADS: ${RANKER_TORCH_THREADS:-4}
+    volumes:
+      - ranker_model_cache:/app/.cache/huggingface
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', '/app/.venv/bin/python', '-c', 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/ready",timeout=5)']
+      interval: 15s
+      timeout: 10s
+      start_period: 15m
+      retries: 5
+  backend:
+    <<: *app
+    environment:
+      <<: *environment
+      DEMO_MODE: ${DEMO_MODE:-true}
+    ports: ['127.0.0.1:8092:8000']
+    healthcheck:
+      test: ['CMD', 'python', '-c', 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/health",timeout=3)']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  tool-gateway:
+    <<: *app
+    command: ['uvicorn', 'tool_gateway_service.api:app', '--host', '0.0.0.0', '--port', '8000']
+    ports: ['127.0.0.1:8090:8000']
+  company-user-profiler:
+    <<: *app
+    command: ['uvicorn', 'profiler_service.api:create_profiler', '--factory', '--host', '0.0.0.0', '--port', '8000']
+    ports: ['127.0.0.1:8093:8000']
+  insight-agent:
+    <<: *app
+    command: ['uvicorn', 'insight_service.api:create_insight', '--factory', '--host', '0.0.0.0', '--port', '8000']
+    ports: ['127.0.0.1:8094:8000']
+  bank-materials-source:
+    <<: *app
+    command: ['uvicorn', 'bank_source_service.api:app', '--host', '0.0.0.0', '--port', '8000']
+    environment:
+      <<: *environment
+      BANK_SOURCE_STORAGE: /bank-data
+      BANK_SOURCE_SEED_DIR: /workspace/bank-materials-source/materials
+    volumes:
+      - bank_source_data:/bank-data
+    ports: ['127.0.0.1:8091:8000']
+    depends_on: {}
+  backend-worker:
+    <<: *app
+    command: ['python', '-m', 'backend_service.worker']
+    environment:
+      <<: *environment
+      WORKER_ROLE: backend
+      WORKER_CONCURRENCY: '3'
+    healthcheck:
+      disable: true
+  document-worker:
+    <<: *app
+    command: ['python', '-m', 'backend_service.worker']
+    environment:
+      <<: *environment
+      WORKER_ROLE: documents
+      WORKER_CONCURRENCY: '2'
+    healthcheck:
+      disable: true
+  profiler-worker:
+    <<: *app
+    command: ['python', '-m', 'backend_service.worker']
+    environment:
+      <<: *environment
+      WORKER_ROLE: profiler
+      WORKER_CONCURRENCY: '1'
+    healthcheck:
+      disable: true
+  insight-worker:
+    <<: *app
+    command: ['python', '-m', 'backend_service.worker']
+    environment:
+      <<: *environment
+      WORKER_ROLE: insight
+      WORKER_CONCURRENCY: '1'
+    healthcheck:
+      disable: true
+
+volumes:
+  documents_data:
+  bank_source_data:
+  ranker_model_cache:

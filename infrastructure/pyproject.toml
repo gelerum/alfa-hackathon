@@ -1,0 +1,35 @@
+[project]
+name = "local-stack-tests"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "agent-common==0.1.0",
+  "business-backend==0.1.0",
+  "business-tool-gateway==0.1.0",
+  "company-user-profiler==0.1.0",
+  "insight-agent==0.1.0",
+  "bank-materials-source==0.1.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+agent-common = { path = "../service-common", editable = true }
+business-backend = { path = "../backend", editable = true }
+business-tool-gateway = { path = "../tool-gateway", editable = true }
+company-user-profiler = { path = "../company-user-profiler", editable = true }
+insight-agent = { path = "../insight-agent", editable = true }
+bank-materials-source = { path = "../bank-materials-source", editable = true }
+
+[dependency-groups]
+dev = ["pytest>=8,<9", "ruff>=0.11,<1", "playwright>=1.64.1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E9", "F"]
