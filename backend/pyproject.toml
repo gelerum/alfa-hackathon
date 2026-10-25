@@ -1,0 +1,24 @@
+[project]
+name = "business-backend"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "agent-common==0.1.0",
+  "uvicorn>=0.30,<1",
+  "python-multipart>=0.0.20",
+  "pymupdf>=1.25,<2",
+  "python-docx>=1.1,<2",
+  "openpyxl>=3.1,<4",
+  "pillow>=11,<13",
+  "pytesseract>=0.3.13,<1",
+]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["backend_service*"]
+
+[tool.uv.sources]
+agent-common = { path = "../service-common", editable = true }
