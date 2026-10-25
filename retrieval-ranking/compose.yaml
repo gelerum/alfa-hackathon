@@ -1,0 +1,24 @@
+name: alpha-retrieval-ranking
+
+services:
+  retrieval-ranking:
+    build: .
+    env_file: .env
+    environment:
+      HF_HOME: /app/.cache/huggingface
+      HF_XET_CACHE: /app/.cache/huggingface/xet
+    ports:
+      - "127.0.0.1:8002:8000"
+    volumes:
+      - model-cache:/app/.cache/huggingface
+    networks:
+      - alpha
+    restart: unless-stopped
+
+volumes:
+  model-cache:
+
+networks:
+  alpha:
+    external: true
+    name: ${ALPHA_NETWORK:-alpha_default}

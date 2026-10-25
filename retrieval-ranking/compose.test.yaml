@@ -1,0 +1,20 @@
+name: alpha-retrieval-ranking-test
+
+services:
+  test-db:
+    image: pgvector/pgvector:0.8.1-pg17@sha256:3e8b3adfd27b5707128f60956f62a793c3c9326ea8cfaf0eab7adccb5d700b21
+    environment:
+      POSTGRES_USER: retr_rank_test
+      POSTGRES_PASSWORD: retr_rank_test
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:55439:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U retr_rank_test -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    labels:
+      alpha.retrieval-ranking.resource: synthetic-integration-test
