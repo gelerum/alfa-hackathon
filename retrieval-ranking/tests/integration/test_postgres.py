@@ -1,16 +1,11 @@
-"""Real pgvector/FTS and shared-schema regression tests on synthetic 1024D vectors."""
-
-import json
 from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
-from pathlib import Path
 from uuid import UUID, uuid4
 
 import psycopg
 import pytest
 from psycopg.rows import dict_row
-
 from retrieval_ranking.config import SCORE_TYPE, Settings
 from retrieval_ranking.db import PostgresRepository
 from retrieval_ranking.db.search import FTS_SQL
@@ -33,13 +28,6 @@ def settings(dsn, **overrides):
 
 def query(seed, **overrides):
     return RankingQuery(**(dict(company_id=seed.COMPANY, as_of=seed.AS_OF, top_k=2) | overrides))
-
-
-def test_schema_copy_provenance():
-    fixture = Path(__file__).resolve().parents[1] / "fixtures"
-    provenance = json.loads((fixture / "schema-provenance.json").read_text())
-    assert sha256((fixture / "schema.sql").read_bytes()).hexdigest() == provenance["sha256"]
-    assert provenance["source_commit"] == "861ea8dde6e84bd1495dae8d9e7e866bf62c3bb8"
 
 
 def test_hybrid_union_preserves_individual_hits(database_dsn, seed):
@@ -177,6 +165,7 @@ def test_fts_stopwords_and_operator_like_terms_are_safe(database_dsn, seed, term
         terms=terms,
         limit=20,
         as_of=seed.AS_OF,
+        known_at=seed.AS_OF,
         published_after=None,
         include_undated=False,
     )

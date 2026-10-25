@@ -1,5 +1,3 @@
-"""Synthetic integration fixtures: basis vectors test mechanics, not recommendation quality."""
-
 from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID
@@ -116,9 +114,9 @@ def add_news(
     )
     connection.execute(
         """INSERT INTO news_revisions
-        (article_id,content_version,title,body,description,recorded_at)
-        VALUES (%s,%s,%s,%s,'Synthetic fixture',%s)""",
-        (article_id, revision_version, title, title + " archived body", recorded),
+        (article_id,content_version,title,body,description,published_at,recorded_at)
+        VALUES (%s,%s,%s,%s,'Synthetic fixture',%s,%s)""",
+        (article_id, revision_version, title, title + " archived body", published, recorded),
     )
     if values is not None:
         connection.execute(
@@ -277,9 +275,10 @@ def _seed_news(connection):
     )
     add_news(connection, "stale-embedding", "Stale embedding", (1, 0, 0))
     connection.execute(
-        """INSERT INTO news_revisions(article_id,content_version,title,body,recorded_at)
-        VALUES ('stale-embedding','v2','Stale embedding updated','Updated body',%s)""",
-        (KNOWN,),
+        """INSERT INTO news_revisions
+        (article_id,content_version,title,body,published_at,recorded_at)
+        VALUES ('stale-embedding','v2','Stale embedding updated','Updated body',%s,%s)""",
+        (KNOWN, KNOWN),
     )
     connection.execute(
         "UPDATE news SET content_version='v2',title='Stale embedding updated' "

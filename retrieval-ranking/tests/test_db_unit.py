@@ -1,11 +1,8 @@
-"""Validate database input boundaries independently of PostgreSQL integration tests."""
-
 import json
 from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
-
 from retrieval_ranking.config import Settings
 from retrieval_ranking.db.context import ContextReader, parse_vector
 from retrieval_ranking.db.runs import RunStore, json_safe

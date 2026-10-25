@@ -1,5 +1,3 @@
-"""Exercise pipeline behavior with deterministic adapters and no network/model downloads."""
-
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -7,7 +5,6 @@ from threading import Event
 from uuid import UUID
 
 import pytest
-
 from retrieval_ranking.config import SCORE_TYPE, Settings
 from retrieval_ranking.domain import (
     Candidate,

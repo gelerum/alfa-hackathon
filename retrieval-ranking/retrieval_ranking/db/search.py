@@ -1,5 +1,3 @@
-"""Perform bounded vector/lexical retrieval in PostgreSQL and fetch only their union."""
-
 import hashlib
 import json
 import math
@@ -20,10 +18,10 @@ NEWS_FILTER = """
     n.duplicate_of_id IS NULL AND n.fetched_at <= %(known_at)s
     AND r.recorded_at <= %(known_at)s
     AND (
-        (n.published_at IS NULL AND %(include_undated)s)
-        OR (n.published_at < %(as_of)s
+        (r.published_at IS NULL AND %(include_undated)s)
+        OR (r.published_at < %(as_of)s
             AND (%(published_after)s::timestamptz IS NULL
-                 OR n.published_at >= %(published_after)s::timestamptz))
+                 OR r.published_at >= %(published_after)s::timestamptz))
     )
 """
 VECTOR_FROM = (
@@ -110,7 +108,10 @@ class NewsSearcher:
         }
         # Iterative scans help pgvector 0.8+ refill results discarded by metadata filters.
         # Older pgvector ignores this custom setting; the exact underfill retry still applies.
-        connection.execute("SELECT set_config('hnsw.iterative_scan', 'strict_order', true)")
+        connection.execute(
+            "SELECT set_config('hnsw.iterative_scan', 'strict_order', true) "
+            "WHERE current_setting('hnsw.iterative_scan', true) IS NOT NULL"
+        )
         for facet in context.facets:
             self._vector_hits(connection, facet, context, filters, hits)
         terms = lexical_terms(context, self.settings)
@@ -177,7 +178,7 @@ class NewsSearcher:
         rows = connection.execute(
             """
             SELECT n.article_id, r.content_version, r.title, r.body, r.description,
-                   n.published_at, n.canonical_url, n.source_name, n.event_id
+                   r.published_at, n.canonical_url, n.source_name, n.event_id
             FROM unnest(%s::text[], %s::text[]) wanted(article_id, content_version)
             JOIN news n ON n.article_id = wanted.article_id
             JOIN news_revisions r ON r.article_id = wanted.article_id

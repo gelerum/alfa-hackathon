@@ -1,5 +1,3 @@
-"""Dependency boundaries keep HTTP, PostgreSQL and model inference independently testable."""
-
 from typing import Any, Protocol
 from uuid import UUID
 

@@ -1,5 +1,3 @@
-"""Persist complete candidate traces before finalizing the immutable ranking run."""
-
 import json
 import math
 from dataclasses import asdict

@@ -1,5 +1,3 @@
-"""Explicit limits are versioned inputs, not learned relevance thresholds."""
-
 import hashlib
 import json
 from pathlib import Path

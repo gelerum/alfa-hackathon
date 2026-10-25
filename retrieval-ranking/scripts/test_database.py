@@ -1,9 +1,3 @@
-"""Manage the service's isolated Docker PostgreSQL test database.
-
-Uses only compose.test.yaml and project alpha-retrieval-ranking-test.
-No production settings, sibling services, persistent volumes, or host changes are used.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -45,7 +39,7 @@ def compose(*args: str, capture: bool = False) -> subprocess.CompletedProcess:
             "-",
             *args,
         ],
-        input=(ROOT / "compose.test.yaml").read_text(),
+        input=(ROOT.parent / "infrastructure/ranker-test.compose.yaml").read_text(),
         text=True,
         check=True,
         capture_output=capture,
@@ -122,7 +116,7 @@ def _seed_demo() -> None:
     seed = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(seed)
     with psycopg.connect(dsn(DEMO_DATABASE), autocommit=True) as connection:
-        connection.execute((fixture / "schema.sql").read_text(), prepare=False)
+        connection.execute((ROOT.parent / "database/schema.sql").read_text(), prepare=False)
         with connection.transaction():
             seed.seed_database(connection)
 

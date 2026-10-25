@@ -1,5 +1,3 @@
-"""PostgreSQL durable queue, leases, bounded subprocesses, restart recovery and maintenance."""
-
 import logging
 import multiprocessing as mp
 import os

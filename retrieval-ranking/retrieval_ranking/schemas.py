@@ -1,5 +1,3 @@
-"""HTTP contracts: identifiers and text metadata, never an entire vector corpus."""
-
 from datetime import UTC, datetime
 from uuid import UUID
 

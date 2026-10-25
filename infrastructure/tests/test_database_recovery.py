@@ -1,5 +1,3 @@
-"""Recovery must never overwrite an existing database or continue after SQL errors."""
-
 import os
 from pathlib import Path
 import subprocess

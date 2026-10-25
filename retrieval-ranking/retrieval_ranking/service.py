@@ -1,5 +1,3 @@
-"""Orchestrate one bounded retrieval/ranking run without holding a DB transaction."""
-
 import hashlib
 import logging
 import math

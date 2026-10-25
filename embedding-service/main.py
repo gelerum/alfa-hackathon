@@ -1,5 +1,3 @@
-"""CPU-only Qwen embeddings. This service does not access the database."""
-
 import logging
 import os
 import threading

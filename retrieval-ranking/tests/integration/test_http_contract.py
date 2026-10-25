@@ -1,12 +1,9 @@
-"""Real SQL/HTTP/persistence contract with an explicit model-free test scorer."""
-
 import json
 from pathlib import Path
 
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
-
 from retrieval_ranking.api import create_app
 from retrieval_ranking.config import Settings
 from retrieval_ranking.db import PostgresRepository

@@ -1,8 +1,3 @@
-"""Own bounded plan/tool/validate/repair loop, using an approved Chat Completions model.
-
-Only concise operational plans are persisted; hidden reasoning is neither requested nor stored.
-"""
-
 import json
 import time
 from uuid import uuid4
@@ -11,7 +6,7 @@ import httpx
 from agent_common.core import encode as jsonable_encoder
 from openai import OpenAI
 
-from agent_common.contracts import AgentScope
+from agent_common.contracts import AgentScope, PUBLIC_RESEARCH_TOPICS
 from agent_common.core import db, execute, j, now, settings
 
 ALLOWED_MODELS = {
@@ -38,6 +33,10 @@ The raw revenue value 1000 is not an established missing-value sentinel. CL_TYPE
 Separate reported facts, dated Alfa-Bank opinion, and conditional AI inference. Never attribute another bank's opinion to Alfa.
 Older sources are context, not fresh events; publication date unknown means temporal applicability is uncertain.
 Only cite source_ids actually returned by tools and fact_ids from the pinned profile.
+Profile fact values must be extractive; for bank rows use exact field keys and values, never infer debt terms from flags.
+verified_fact and bank_position statements must be exact excerpts from their cited sources.
+Each business-impact claim must cite both a concrete company fact and its primary event source.
+When terms are unknown, state the assumption and keep impact conditional.
 Do not force a quota of insights. If evidence is weak, omit a card or qualify it and state limitations.
 Do not recommend irreversible financial actions; suggest grounded checks/scenarios within the user's responsibility.
 Return ONE JSON object per turn, with one of these shapes:
@@ -45,7 +44,9 @@ Return ONE JSON object per turn, with one of these shapes:
 {"action":"tool","tool":"tool.name","arguments":{...}}
 {"action":"finish","result":{...matching the supplied schema...}}
 Tools use these arguments: *.search {query,limit (1..12),published_after?}; *.read {source_id};
-web.search {query,limit (1..8)}; web.fetch {url}; company_context.get and company_bank_data.get {}.
+web.search {query,limit (1..8)}; query must be an EXACT allowed public topic, never private text.
+web.fetch {url} accepts only unchanged URLs returned by web.search in this run.
+company_context.get and company_bank_data.get {}.
 You must assess missing data and conflicts, use tools as needed and repair validation errors.
 """
 
@@ -110,7 +111,8 @@ class Runtime:
             )
 
     def tool(self, name, args):
-        if time.monotonic() - self.started > settings.agent_timeout_seconds:
+        remaining = settings.agent_timeout_seconds - (time.monotonic() - self.started)
+        if remaining <= 0:
             raise TimeoutError("Agent budget exhausted")
         self.log("tool_call", tool=name, arguments=args)
         try:
@@ -118,7 +120,7 @@ class Runtime:
                 settings.gateway_url + "/tools/" + name,
                 headers={"Authorization": f"Bearer {settings.internal_token}"},
                 json={"scope": self.scope.model_dump(mode="json"), "arguments": args},
-                timeout=150,
+                timeout=min(150, remaining),
             )
             response.raise_for_status()
             result = response.json()
@@ -133,6 +135,9 @@ class Runtime:
                     "preferences": {
                         k: v for k, v in (result.get("preferences") or {}).items() if k != "raw_answers"
                     },
+                    "user_note": ((result.get("preferences") or {}).get("raw_answers") or {}).get("note", "")[
+                        :1000
+                    ],
                     "goals": result.get("user_goals", []),
                     "facts": [
                         {"fact_id": f["fact_id"], "field": f["field"], "value_preview": str(f["value"])[:250]}
@@ -149,6 +154,7 @@ class Runtime:
                 result={
                     "source_ids": [s.get("source_id") for s in result.get("sources", [])],
                     "limitation": result.get("limitation"),
+                    "retrieval": result.get("retrieval"),
                 },
             )
         except (httpx.HTTPError, ValueError) as exc:
@@ -210,6 +216,8 @@ class Runtime:
             {
                 "role": "system",
                 "content": BASE_POLICY
+                + "\nAllowed public search topics: "
+                + json.dumps(PUBLIC_RESEARCH_TOPICS, ensure_ascii=False)
                 + "\nAvailable tools: "
                 + ", ".join(tools)
                 + "\nResult schema: "

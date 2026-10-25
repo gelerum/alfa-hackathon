@@ -22,7 +22,10 @@ Python versions are pinned in `uv.lock`; existing Parser/Embedding services reta
 | BeautifulSoup | Web text extraction | https://www.crummy.com/software/BeautifulSoup/ — MIT |
 | SearXNG | External search, upstream engines may reject traffic | https://github.com/searxng/searxng — AGPL-3.0 |
 | SentenceTransformers / Transformers / PyTorch | Existing embedding-service | https://sbert.net/ , https://huggingface.co/docs/transformers/ , https://pytorch.org/ — Apache-2.0 / BSD |
-| Qwen3-Embedding-0.6B | Existing 1024-dimensional embedding model; pinned revision in embedding-service | https://huggingface.co/Qwen/Qwen3-Embedding-0.6B — Apache-2.0 |
+| Qwen3-Embedding-0.6B | 1024-dimensional embedding model; pinned revision in embedding-service | https://huggingface.co/Qwen/Qwen3-Embedding-0.6B — Apache-2.0 |
+| Qwen3-Reranker-0.6B | Non-generative yes/no logit scoring; revision `e61197ed45024b0ed8a2d74b80b4d909f1255473` | https://huggingface.co/Qwen/Qwen3-Reranker-0.6B — Apache-2.0 |
+| Hugging Face Hub / Tokenizers / Safetensors | Model loading and weights | https://huggingface.co/docs — Apache-2.0 |
+| Playwright | Browser regression tests | https://playwright.dev/ — Apache-2.0 |
 | uv / pytest / Ruff | Locking and tests | https://docs.astral.sh/uv/ , https://pytest.org/ , https://docs.astral.sh/ruff/ — MIT/Apache-2.0 / MIT |
 | SQLite | Independent mock source catalog | https://www.sqlite.org/ — public domain |
 
@@ -36,6 +39,8 @@ Python versions are pinned in `uv.lock`; existing Parser/Embedding services reta
 - Bank CSVs and the nine supplied bank PDF materials are case-provided data, not datasets
   newly licensed by this implementation. Do not redistribute outside the authorized case context
   without checking permission. The synthetic IDs do not identify real people or organizations.
+- The source case CSV/PDF are included for an authorized private team/jury checkout.
+  Do not publish this repository or its data publicly without checking case permissions.
 - News/web content retains its original source and applicable publisher conditions. Storage
   and extraction do not transfer copyright. Respect terms, robots policies and access restrictions.
 
@@ -45,8 +50,9 @@ Python versions are pinned in `uv.lock`; existing Parser/Embedding services reta
    official Alfa-Bank endpoint. New materials can be published live to the simulation.
 2. `/admin/demo` creates a fictional company/user and explicitly associates it with a synthetic
    bank record. This is not real identity resolution or production SSO.
-3. External Ranker remains another team's component. The adapter accepts its callbacks;
-   manual article-ID callbacks in tests are not a ranking implementation.
+3. `retrieval-ranking` is included in this monorepo. Backend calls synchronous `/rank`, stores
+   the ranking run ID and submits that ID to Insight Agent `/runs`. Internal ranker has no
+   public authentication endpoint and is not published on a host port.
 4. Unit/integration tests fake generative responses and embedding vectors. Those tests establish
    contracts and persistence, not real model accuracy. Mock OCR unit tests do not evaluate real OCR.
 5. Docker images and OS packages need deployment-specific digest/version pinning for strict

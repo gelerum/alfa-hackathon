@@ -1,5 +1,3 @@
-"""API contract checks without model downloads. Real model check is in README."""
-
 import asyncio
 from unittest.mock import patch
 

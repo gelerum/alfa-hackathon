@@ -1,10 +1,3 @@
-"""Новости Московской биржи через открытый API ISS (iss.moex.com).
-
-Список: /iss/sitenews.json?start=N — по 50 новостей, от новых к старым,
-полный текст: /iss/sitenews/<id>.json. Ключ и регистрация не нужны.
-Время в API московское.
-"""
-
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 

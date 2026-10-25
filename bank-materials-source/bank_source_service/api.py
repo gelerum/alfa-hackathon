@@ -1,8 +1,3 @@
-"""An explicitly simulated bank publication API, independently persisted in SQLite.
-
-Seed PDFs are bootstrap data only. Consumers poll the cursor API, never the seed folder.
-"""
-
 import os
 import sqlite3
 from contextlib import asynccontextmanager, contextmanager

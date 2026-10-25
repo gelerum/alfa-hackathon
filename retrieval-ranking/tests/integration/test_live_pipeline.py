@@ -1,5 +1,3 @@
-"""Opt-in full path: real SQL candidates, real pinned Qwen CPU, HTTP and persisted trace."""
-
 import json
 import os
 from pathlib import Path
@@ -8,7 +6,6 @@ from time import perf_counter
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
-
 from retrieval_ranking.api import create_app
 from retrieval_ranking.config import MODEL_ID, MODEL_REVISION, Settings
 

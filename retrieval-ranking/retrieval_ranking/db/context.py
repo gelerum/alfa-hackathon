@@ -1,8 +1,6 @@
-"""Resolve immutable company/user snapshots before selecting compatible query vectors."""
-
 import json
-from dataclasses import replace
 import math
+from dataclasses import replace
 from typing import Any
 from uuid import UUID
 

@@ -2,7 +2,6 @@ from types import SimpleNamespace
 
 import pytest
 import torch
-
 from retrieval_ranking.config import Settings
 from retrieval_ranking.reranker import _PREFIX, _SUFFIX, QwenReranker
 

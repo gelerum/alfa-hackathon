@@ -1,9 +1,3 @@
-"""Deterministic text views of the immutable context and news revisions.
-
-Formatting selects existing fields; it does not infer missing business relationships.
-The same input snapshot always produces the same text.
-"""
-
 import json
 from datetime import UTC
 from typing import Any

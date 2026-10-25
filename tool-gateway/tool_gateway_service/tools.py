@@ -3,6 +3,7 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import json
+import multiprocessing as mp
 import socket
 import ssl
 from datetime import timedelta
@@ -16,6 +17,7 @@ from agent_common.core import encode as jsonable_encoder
 from agent_common.contracts import AgentScope, FetchArgs, ReadArgs, SearchArgs, WebArgs
 from agent_common.core import all_rows, db, digest, j, membership, now, one, settings
 from agent_common.embeddings import config, embed, vector_literal
+from agent_common.evidence import assert_source_eligible
 
 TOOLS = {
     "company_context.get",
@@ -285,6 +287,11 @@ def search(scope: AgentScope, name, args: SearchArgs):
     result, per_doc = [], {}
     for key in sorted(scores, key=lambda k: (-scores[k], k)):
         row = candidates[key]
+        source = one("SELECT * FROM evidence_sources WHERE source_id=%s", (row["source_id"],))
+        try:
+            assert_source_eligible(source, scope)
+        except ValueError:
+            continue
         doc = str(row["document_id"] or row["article_id"])
         if per_doc.get(doc, 0) >= 3:
             continue
@@ -295,7 +302,17 @@ def search(scope: AgentScope, name, args: SearchArgs):
         )
         if len(result) == args.limit:
             break
-    return {"sources": result, "limitation": degraded}
+    return {
+        "sources": result,
+        "limitation": degraded,
+        "retrieval": {
+            "lexical_candidates": len(lexical),
+            "semantic_candidates": len(semantic),
+            "returned": len(result),
+            "empty": not result,
+            "publication_cutoff": scope.as_of,
+        },
+    }
 
 
 def read(scope, name, args):
@@ -306,6 +323,10 @@ def read(scope, name, args):
     )
     if not source:
         raise HTTPException(404, "Source not available")
+    try:
+        assert_source_eligible(source, scope)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
     expected = {
         "news.read": "news",
         "bank_analytics.read": "bank_analytics",
@@ -360,7 +381,7 @@ class PinnedHTTPS(http.client.HTTPSConnection):
         self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
 
 
-def fetch_public(url):
+def _fetch_public(url):
     """DNS is validated and pinned; each redirect is revalidated. HTTPS/443 only."""
     for _ in range(4):
         parts = urlsplit(url)
@@ -398,8 +419,56 @@ def fetch_public(url):
     raise ValueError("Too many redirects")
 
 
+def _fetch_child(url, pipe):
+    try:
+        pipe.send((True, _fetch_public(url)))
+    except Exception as exc:
+        pipe.send((False, str(exc)))
+    finally:
+        pipe.close()
+
+
+def fetch_public(url, timeout=20):
+    parts = urlsplit(url)
+    if parts.scheme != "https" or parts.port not in (None, 443) or parts.username or parts.password:
+        raise ValueError("Only public HTTPS URLs on port 443 are allowed")
+    if timeout <= 0:
+        raise TimeoutError("Public fetch deadline expired")
+    context = mp.get_context("spawn")
+    parent, child = context.Pipe(duplex=False)
+    process = context.Process(target=_fetch_child, args=(url, child), daemon=True)
+    try:
+        process.start()
+        child.close()
+        if not parent.poll(timeout):
+            raise TimeoutError("Public fetch wall-time limit exceeded")
+        ok, result = parent.recv()
+        if not ok:
+            raise ValueError(result)
+        return result
+    finally:
+        if process.pid is not None:
+            if process.is_alive():
+                process.terminate()
+            process.join(timeout=1)
+            if process.is_alive():
+                process.kill()
+                process.join()
+        parent.close()
+        child.close()
+
+
 def web_fetch(scope, args):
-    url, text = fetch_public(args.url)
+    discovered = one(
+        "SELECT 1 FROM evidence_sources WHERE source_type='public_web' AND source_url=%s "
+        "AND source_ref->>'discovery_run_id'=%s AND source_ref->>'discovery_only'='true'",
+        (args.url, str(scope.agent_run_id)),
+    )
+    if not discovered:
+        raise ValueError("Fetch URL must be an unchanged result of web.search in this run")
+    run = one("SELECT started_at FROM agent_runs WHERE agent_run_id=%s", (scope.agent_run_id,))
+    remaining = settings.agent_timeout_seconds - (now() - run["started_at"]).total_seconds()
+    url, text = fetch_public(args.url, timeout=min(20, remaining))
     # Public web cannot establish company identity in the fictional-company demo.
     with db() as conn:
         source = conn.execute(
@@ -413,12 +482,7 @@ def web_fetch(scope, args):
     }
 
 
-def web_search(args):
-    # A conservative exfiltration guard in addition to prompts and trusted scope.
-    import re
-
-    if re.search(r"\d{10,}|SYNTHETIC_|\b[UF]_\w+", args.query, re.I):
-        raise ValueError("Sensitive identifiers are forbidden in public search queries")
+def web_search(scope, args):
     response = httpx.get(
         settings.searxng_base_url + "/search",
         params={"q": args.query, "format": "json", "language": "ru"},
@@ -426,6 +490,15 @@ def web_search(args):
     )
     response.raise_for_status()
     results = response.json().get("results", [])[: args.limit]
+    with db() as conn:
+        for result in results:
+            url = result.get("url") or ""
+            parts = urlsplit(url)
+            if parts.scheme == "https" and not parts.username and not parts.password:
+                conn.execute(
+                    "INSERT INTO evidence_sources(source_type,source_ref,source_url) VALUES('public_web',%s,%s)",
+                    (j({"discovery_run_id": str(scope.agent_run_id), "discovery_only": True}), url),
+                )
     return {
         "results": [
             {"title": r.get("title"), "url": r.get("url"), "snippet": r.get("content", "")[:1000]}
@@ -455,7 +528,7 @@ def dispatch(name, scope, arguments):
         elif name.endswith(".read"):
             result = read(scope, name, ReadArgs.model_validate(arguments))
         elif name == "web.search":
-            result = web_search(WebArgs.model_validate(arguments))
+            result = web_search(scope, WebArgs.model_validate(arguments))
         else:
             result = web_fetch(scope, FetchArgs.model_validate(arguments))
     except Exception:

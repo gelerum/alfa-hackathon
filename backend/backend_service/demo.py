@@ -1,5 +1,3 @@
-"""Explicit local demo entry: never use as internet-bank authentication."""
-
 import hashlib
 import hmac
 import os

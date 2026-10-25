@@ -24,6 +24,6 @@ def call(name: str, request: ToolCall):
         return dispatch(name, request.scope, request.arguments)
     except (ValueError, ValidationError) as exc:
         raise HTTPException(422, str(exc)) from exc
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, OSError) as exc:
         logging.exception("Tool upstream unavailable: %s", name)
         raise HTTPException(502, "Tool upstream unavailable") from exc

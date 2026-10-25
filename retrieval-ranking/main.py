@@ -1,5 +1,3 @@
-"""Run with: uv run --locked uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1."""
-
 import os
 
 # Keep auxiliary Hugging Face/Xet caches in this checkout before importing Transformers.

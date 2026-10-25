@@ -1,5 +1,3 @@
-"""FastAPI boundary with injectable adapters for isolated tests."""
-
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import asdict

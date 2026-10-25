@@ -1,5 +1,3 @@
-"""Список источников для парсинга. Новый источник — новая строка здесь."""
-
 from docs_parser import PageDocsParser
 from moex_parser import MOEXParser
 from rss_parser import RSSParser

@@ -66,7 +66,7 @@ def fake_embeddings(demo, monkeypatch):
     with db() as conn:
         cfg = conn.execute(
             "INSERT INTO embedding_configs(config_key,model_id,model_revision) "
-            "VALUES('test','test','rev') RETURNING *"
+            "VALUES('test','Qwen/Qwen3-Embedding-0.6B','rev') RETURNING *"
         ).fetchone()
     monkeypatch.setattr(profiler, "config", lambda **kw: cfg)
     monkeypatch.setattr(tools, "config", lambda **kw: cfg)
@@ -242,12 +242,13 @@ def test_full_report_and_late_arrival_revision(demo, fake_embeddings, monkeypatc
                         "claims": [
                             {
                                 "kind": "verified_fact",
-                                "statement": "Ставка сохранена.",
+                                "statement": "Ключевая ставка сохранена",
                                 "source_ids": [str(source["source_id"])],
                             },
                             {
                                 "kind": "ai_inference",
                                 "statement": "Следует проверить чувствительность бюджета.",
+                                "source_ids": [str(source["source_id"])],
                                 "fact_ids": [fact_id],
                             },
                         ],
@@ -266,7 +267,7 @@ def test_full_report_and_late_arrival_revision(demo, fake_embeddings, monkeypatc
     job = one("SELECT * FROM jobs WHERE job_id=%s", (accepted["job_id"],))
     first = insights.insight_job(job["payload"])
     assert first["version"] == 2
-    assert one("SELECT count(*) AS n FROM insight_claim_sources")["n"] == 1
+    assert one("SELECT count(*) AS n FROM insight_claim_sources")["n"] == 2
     assert one("SELECT count(*) AS n FROM insight_claim_facts")["n"] == 1
     assert one("SELECT input_snapshot FROM report_versions WHERE version=1")["input_snapshot"][
         "deadline_fallback"
@@ -662,10 +663,15 @@ def test_primary_citations_must_use_the_pinned_revision(demo, fake_embeddings, m
                     "claims": [
                         {
                             "kind": "verified_fact",
-                            "statement": "Событие",
+                            "statement": "Ключевая ставка сохранена",
                             "source_ids": [new_source["source_id"]],
                         },
-                        {"kind": "ai_inference", "statement": "Условное влияние", "fact_ids": [fact_id]},
+                        {
+                            "kind": "ai_inference",
+                            "statement": "Условное влияние",
+                            "fact_ids": [fact_id],
+                            "source_ids": [old_source["source_id"]],
+                        },
                     ],
                 }
             ],
@@ -716,14 +722,21 @@ def test_configuring_ranker_after_waiting_dispatch_does_not_strand_request(
 
     def accept(url, **kwargs):
         calls.append(kwargs["json"])
-        return httpx.Response(202, json={"accepted": True}, request=httpx.Request("POST", url))
+        if url == settings.ranker_url:
+            body = {"ranking_run_id": str(uuid4())}
+        else:
+            body = enqueue("insight", "insight:" + str(request["request_id"]), {"test": True})
+            body = {"job_id": str(body["job_id"])}
+        return httpx.Response(200, json=body, request=httpx.Request("POST", url))
 
     monkeypatch.setattr(httpx, "post", accept)
     assert request_ranking(report)["request_id"] == request["request_id"]
     active = claim(["dispatch_ranking"])
     assert active["job_id"] != waiting["job_id"]
     finish(active, {"ok": True, "result": dispatch_ranking(active["payload"])})
-    assert len(calls) == 1 and calls[0]["request_id"] == str(request["request_id"])
+    assert len(calls) == 2 and calls[0]["request_id"] == str(request["request_id"])
+    assert "callback_url" not in calls[0] and "report_id" not in calls[0]
+    assert calls[1]["ranking_run_id"]
     assert one("SELECT status FROM ranking_requests")["status"] == "sent"
     request_ranking(report)
     assert claim(["dispatch_ranking"]) is None
@@ -754,7 +767,13 @@ def test_terminal_ranker_dispatch_recovers_once_after_cooldown(demo, fake_embedd
     assert recovered["attempts"] == 1 and recovered["job_id"] != initial["job_id"]
     assert recovered["payload"]["request_id"] == str(request["request_id"])
     monkeypatch.setattr(
-        httpx, "post", lambda url, **kw: httpx.Response(202, request=httpx.Request("POST", url))
+        httpx,
+        "post",
+        lambda url, **kw: httpx.Response(
+            200,
+            json={"ranking_run_id": str(uuid4()), "job_id": str(uuid4())},
+            request=httpx.Request("POST", url),
+        ),
     )
     finish(recovered, {"ok": True, "result": dispatch_ranking(recovered["payload"])})
     final = one("SELECT status,last_error FROM ranking_requests")

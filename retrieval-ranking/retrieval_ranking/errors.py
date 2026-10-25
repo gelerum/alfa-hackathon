@@ -1,6 +1,3 @@
-"""Stable public error codes; database credentials never enter HTTP responses."""
-
-
 class RankingError(Exception):
     def __init__(self, code: str, message: str, status_code: int = 409):
         super().__init__(message)

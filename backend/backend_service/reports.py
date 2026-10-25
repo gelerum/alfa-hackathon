@@ -42,8 +42,10 @@ def request_ranking(report):
     if not profile or not pref:
         return None
     articles = all_rows(
-        "SELECT article_id,content_version FROM news WHERE published_at>=%s AND published_at<%s "
-        "AND duplicate_of_id IS NULL ORDER BY article_id",
+        "SELECT n.article_id,n.content_version FROM news n JOIN news_revisions r "
+        "ON r.article_id=n.article_id AND r.content_version=n.content_version "
+        "WHERE r.published_at>=%s AND r.published_at<%s "
+        "AND n.duplicate_of_id IS NULL ORDER BY n.article_id",
         (report["window_start"], report["window_end"]),
     )
     bank_docs = all_rows(
@@ -114,14 +116,15 @@ def schedule_dispatch(request_id):
         ).fetchone()
         key = base
         if latest:
-            if latest["status"] != "failed":
-                return
-            conn.execute(
-                "UPDATE ranking_requests SET status='failed',last_error=%s WHERE request_id=%s",
-                (latest["last_error"], request_id),
-            )
-            ended = latest["finished_at"] or latest["available_at"]
-            if ended > now() - timedelta(minutes=15):
+            if latest["status"] == "failed":
+                conn.execute(
+                    "UPDATE ranking_requests SET status='failed',last_error=%s WHERE request_id=%s",
+                    (latest["last_error"], request_id),
+                )
+                ended = latest["finished_at"] or latest["available_at"]
+                if ended > now() - timedelta(minutes=15):
+                    return
+            elif not (request["status"] == "sent" and latest["status"] == "completed"):
                 return
             key = base + ":retry:" + str(latest["job_id"])
         conn.execute(
@@ -163,17 +166,19 @@ def dispatch_ranking(payload):
         else:
             response = httpx.post(
                 settings.ranker_url,
-                json=jsonable_encoder({
-                    "request_id": request["request_id"],
-                    "company_id": request["company_id"],
-                    "user_id": request["user_id"],
-                    "profile_id": request["profile_id"],
-                    "user_context_id": request["user_context_id"],
-                    "published_after": request["window_start"],
-                    "as_of": request["window_end"],
-                    "knowledge_as_of": request["created_at"],
-                    "top_k": 10,
-                }),
+                json=jsonable_encoder(
+                    {
+                        "request_id": request["request_id"],
+                        "company_id": request["company_id"],
+                        "user_id": request["user_id"],
+                        "profile_id": request["profile_id"],
+                        "user_context_id": request["user_context_id"],
+                        "published_after": request["window_start"],
+                        "as_of": request["window_end"],
+                        "knowledge_as_of": request["created_at"],
+                        "top_k": 10,
+                    }
+                ),
                 headers={"Authorization": f"Bearer {settings.internal_token}"},
                 timeout=settings.ranker_timeout_seconds,
             )

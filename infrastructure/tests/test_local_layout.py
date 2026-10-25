@@ -1,5 +1,3 @@
-"""Regression checks for local multi-project layout and frontend packaging."""
-
 from pathlib import Path
 import importlib
 

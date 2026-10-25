@@ -1,7 +1,7 @@
-"""Check JSON contracts and safe HTTP failures with injected deterministic adapters."""
-
 import pytest
 from fastapi.testclient import TestClient
+from retrieval_ranking.api import create_app
+from retrieval_ranking.errors import ContextNotReady, RankingError
 from test_service import (
     AS_OF,
     CONFIG_ID,
@@ -12,9 +12,6 @@ from test_service import (
     FakeReranker,
     settings,
 )
-
-from retrieval_ranking.api import create_app
-from retrieval_ranking.errors import ContextNotReady, RankingError
 
 
 def app_client(repository=None):

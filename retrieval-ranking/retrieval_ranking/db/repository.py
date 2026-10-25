@@ -1,5 +1,3 @@
-"""Compose context, search and trace adapters behind the ranking service port."""
-
 from typing import Any
 from uuid import UUID
 

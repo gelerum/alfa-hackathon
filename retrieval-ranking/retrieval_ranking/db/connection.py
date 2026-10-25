@@ -1,5 +1,3 @@
-"""Open short-lived connections; inference never retains a database transaction."""
-
 from contextlib import contextmanager
 from typing import Any
 

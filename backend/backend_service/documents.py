@@ -1,5 +1,3 @@
-"""Bounded extraction runs in a separate worker process, never in the API process."""
-
 import io
 import re
 import zipfile

@@ -1,5 +1,3 @@
-"""Small immutable records shared by SQL adapters and the ranking pipeline."""
-
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any

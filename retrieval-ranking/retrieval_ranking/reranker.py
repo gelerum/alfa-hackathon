@@ -1,10 +1,3 @@
-"""CPU inference using the Qwen model card's yes/no reranking protocol.
-
-Only the final token's vocabulary logits are requested. This avoids materializing
-a large [batch, sequence, vocabulary] tensor on CPU. The returned score is the raw
-yes-minus-no logit margin; it is not a calibrated probability of relevance.
-"""
-
 import math
 from threading import Lock
 from typing import Any

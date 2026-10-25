@@ -102,7 +102,9 @@ def accept_insight(request: InsightRequest):
                     "profile_id": row["profile_id"],
                     "user_context_id": row["user_context_id"],
                     "context_snapshot": {
-                        key: value for key, value in row["context_snapshot"].items() if not key.startswith("_")
+                        key: value
+                        for key, value in row["context_snapshot"].items()
+                        if not key.startswith("_")
                     },
                 }
             ),
@@ -118,7 +120,7 @@ def validate_insight(draft, runtime, articles):
     for card in draft.cards:
         if not set(card.article_ids) <= set(primary):
             raise ValueError("Card must be tied to supplied Top-K article IDs")
-        has_fact, has_news, has_bank = False, False, False
+        has_fact, has_news, has_bank, has_causal_link = False, False, False, False
         for claim in card.claims:
             sources = retrieved_sources(claim.source_ids, runtime)
             for source in sources:
@@ -128,6 +130,10 @@ def validate_insight(draft, runtime, articles):
             if not {str(f) for f in claim.fact_ids} <= runtime.fact_ids:
                 raise ValueError("Claim cites a fact outside the pinned profile")
             has_fact |= bool(claim.fact_ids)
+            if claim.kind in ("verified_fact", "bank_position") and not any(
+                " ".join(claim.statement.split()) in " ".join((s["excerpt"] or "").split()) for s in sources
+            ):
+                raise ValueError("Factual and bank-position statements must be exact supporting excerpts")
             if claim.kind == "verified_fact":
                 if not sources:
                     raise ValueError("A verified fact requires a retrieved source")
@@ -147,6 +153,11 @@ def validate_insight(draft, runtime, articles):
                     raise ValueError("AI inference and projected consequences cannot be confirmed facts")
                 if not sources and not claim.fact_ids:
                     raise ValueError("Inferences/actions require explicit grounds")
+                has_causal_link |= bool(claim.fact_ids) and any(
+                    s["source_type"] == "news" and s["article_id"] in card.article_ids for s in sources
+                )
+        if not has_causal_link:
+            raise ValueError("A business-impact claim must link a company fact and primary event evidence")
         if not has_fact or not has_news:
             raise ValueError("Each card needs a concrete company fact and its primary news evidence")
         if not has_bank:
@@ -417,6 +428,25 @@ def question_job(payload):
     if not row:
         raise ValueError("Report not found")
     membership(row["company_id"], row["user_id"])
+    target = payload.get("insight_id")
+    cards = all_rows(
+        "SELECT i.* FROM insights i JOIN report_insights ri USING(insight_id) "
+        "WHERE ri.report_version_id=%s AND (%s::uuid IS NULL OR i.insight_id=%s)",
+        (row["report_version_id"], target, target),
+    )
+    if target and not cards:
+        raise ValueError("Card is not in the pinned report")
+    source_ids = all_rows(
+        "SELECT DISTINCT cs.source_id FROM report_insights ri JOIN insight_claims c USING(insight_id) "
+        "JOIN insight_claim_sources cs USING(claim_id) WHERE ri.report_version_id=%s "
+        "AND (%s::uuid IS NULL OR c.insight_id=%s)",
+        (row["report_version_id"], target, target),
+    )
+    primary = all_rows(
+        "SELECT DISTINCT ia.article_id,ia.content_version FROM report_insights ri "
+        "JOIN insight_articles ia USING(insight_id) WHERE ri.report_version_id=%s",
+        (row["report_version_id"],),
+    )
     runtime = Runtime(
         "insight_agent",
         row["company_id"],
@@ -424,18 +454,13 @@ def question_job(payload):
         profile_id=row["profile_id"],
         user_context_id=row["user_context_id"],
         as_of=row["window_end"],
-        snapshot={"question": payload},
+        snapshot={
+            "question": payload,
+            "primary_articles": primary,
+            "pinned_source_ids": [str(item["source_id"]) for item in source_ids],
+        },
     )
     try:
-        cards = all_rows(
-            "SELECT i.* FROM insights i JOIN report_insights ri USING(insight_id) WHERE ri.report_version_id=%s",
-            (row["report_version_id"],),
-        )
-        source_ids = all_rows(
-            "SELECT DISTINCT cs.source_id FROM report_insights ri JOIN insight_claims c USING(insight_id) "
-            "JOIN insight_claim_sources cs USING(claim_id) WHERE ri.report_version_id=%s",
-            (row["report_version_id"],),
-        )
         # Only previously used sources, read again through the gateway and checked for access.
         starters = [("company_context.get", {})]
         for item in source_ids[:12]:
@@ -466,6 +491,7 @@ def question_job(payload):
             validate=validate,
             starters=starters,
         )
+        source_details = jsonable_encoder(retrieved_sources(draft.source_ids, runtime))
         with db() as conn:
             conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (operation_key,))
             receipt = conn.execute(
@@ -491,11 +517,23 @@ def question_job(payload):
                 "INSERT INTO operation_results(operation_key,result) VALUES(%s,%s)",
                 (
                     operation_key,
-                    j({"discussion_id": discussion, "answer": draft.answer, "sources": draft.source_ids}),
+                    j(
+                        {
+                            "discussion_id": discussion,
+                            "answer": draft.answer,
+                            "sources": draft.source_ids,
+                            "source_details": source_details,
+                        }
+                    ),
                 ),
             )
         runtime.finish()
-        return {"discussion_id": discussion, "answer": draft.answer, "sources": draft.source_ids}
+        return {
+            "discussion_id": discussion,
+            "answer": draft.answer,
+            "sources": draft.source_ids,
+            "source_details": source_details,
+        }
     except Exception:
         runtime.finish(False)
         raise

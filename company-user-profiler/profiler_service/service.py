@@ -30,8 +30,23 @@ def validate_profile(draft, runtime):
             raise ValueError(
                 "Fictional-company facts require company documents, bank data or explicit company clarifications"
             )
-        if not any(fact.evidence_quote in (s["excerpt"] or "") for s in sources):
+        support = [s for s in sources if fact.evidence_quote in (s["excerpt"] or "")]
+        if not support:
             raise ValueError("Fact evidence quote must be an exact retrieved excerpt")
+        aliases = {"activity": "main_okved_name", "industry": "main_okved_name", "revenue": "revenue_value"}
+        grounded = False
+        for source in support:
+            if source["source_type"] == "bank_import":
+                row = json.loads(source["excerpt"])
+                key = aliases.get(fact.field, fact.field)
+                value = row.get(key)
+                if value is not None:
+                    expected = str(value) if not isinstance(value, bool) else str(value).lower()
+                    grounded |= fact.value.strip() == expected
+            else:
+                grounded |= fact.value in source["excerpt"]
+        if not grounded:
+            raise ValueError("Fact value must be extractive; bank facts use exact bank field keys and values")
     for facet in draft.facets:
         if any(i < 0 or i >= len(draft.facts) for i in facet.fact_indexes):
             raise ValueError("Facet references an unknown fact index")
@@ -221,7 +236,7 @@ def profile_job(payload):
                     fact_ids = []
                     for fact in draft.facts:
                         sources = retrieved_sources(fact.source_ids, runtime)
-                        source = sources[0]
+                        source = next(s for s in sources if fact.evidence_quote in (s["excerpt"] or ""))
                         source_type = (
                             source["source_type"] if source["source_type"] != "bank_analytics" else "document"
                         )

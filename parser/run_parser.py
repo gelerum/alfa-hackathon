@@ -1,17 +1,3 @@
-"""Сбор новостей в общую БД.
-
-По умолчанию работает постоянно: проход по всем источникам, затем эмбеддинги
-новых новостей, пауза PARSE_INTERVAL_MINUTES (по умолчанию 30 минут), снова
-проход. Так его запускает Docker (`docker compose up -d`).
-С флагом --once делает один проход и завершается.
-
-Переменные окружения:
-  DATABASE_URL                — общая БД (репозиторий database);
-  EMBEDDING_BASE_URL          — embedding-service; не задан — эмбеддинги не считаются;
-  EMBEDDING_CONFIG_KEY        — ключ embedding_configs, общий с профайлером;
-  EMBED_TIME_BUDGET_MINUTES   — сколько минут за проход тратить на эмбеддинги (20).
-"""
-
 import datetime
 import os
 import signal

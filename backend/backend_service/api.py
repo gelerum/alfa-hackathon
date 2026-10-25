@@ -274,6 +274,11 @@ def get_context(company_id: str, user: UUID = Depends(current_user)):
         "profile": profile,
         "user_context": preferences,
         "status": "ready" if profile and preferences else "preparing",
+        "profile_job": one(
+            "SELECT job_id,status,last_error FROM jobs WHERE kind='profile' "
+            "AND payload->>'company_id'=%s AND payload->>'user_id'=%s ORDER BY created_at DESC LIMIT 1",
+            (company_id, str(user)),
+        ),
     }
 
 
@@ -298,9 +303,13 @@ def reports(company_id: str, user: UUID = Depends(current_user)):
     membership(company_id, user)
     return all_rows(
         "SELECT r.*,v.version,v.report_version_id,v.summary,v.limitations,v.published_at, "
-        "coalesce(v.input_snapshot @> '{\"deadline_fallback\":true}'::jsonb,false) AS availability_notice "
+        "coalesce(v.input_snapshot @> '{\"deadline_fallback\":true}'::jsonb,false) AS availability_notice, "
+        "q.status AS ranking_status,q.last_error,j.job_id AS analysis_job_id,j.status AS analysis_status "
         "FROM reports r LEFT JOIN LATERAL (SELECT * FROM report_versions v WHERE v.report_id=r.report_id "
         "AND v.status='published' ORDER BY version DESC LIMIT 1) v ON true "
+        "LEFT JOIN LATERAL (SELECT * FROM ranking_requests q WHERE q.report_id=r.report_id "
+        "ORDER BY created_at DESC LIMIT 1) q ON true "
+        "LEFT JOIN jobs j ON j.idempotency_key='insight:' || q.request_id::text "
         "WHERE r.company_id=%s AND r.user_id=%s ORDER BY r.window_end DESC LIMIT 100",
         (company_id, user),
     )
@@ -383,6 +392,8 @@ def report_detail(report_id: UUID, version: int | None = None, user: UUID = Depe
 
 class Question(StrictModel):
     request_id: UUID
+    report_version_id: UUID | None = None
+    insight_id: UUID | None = None
     question: str = Field(min_length=1, max_length=2000)
 
 
@@ -390,15 +401,25 @@ class Question(StrictModel):
 def ask(report_id: UUID, request: Question, user: UUID = Depends(current_user)):
     owned_report(report_id, user)
     version = one(
-        "SELECT * FROM report_versions WHERE report_id=%s AND status='published' ORDER BY version DESC LIMIT 1",
-        (report_id,),
+        "SELECT * FROM report_versions WHERE report_id=%s AND status='published' "
+        "AND (%s::uuid IS NULL OR report_version_id=%s) ORDER BY version DESC LIMIT 1",
+        (report_id, request.report_version_id, request.report_version_id),
     )
+    if request.insight_id and (
+        not version
+        or not one(
+            "SELECT 1 FROM report_insights WHERE report_version_id=%s AND insight_id=%s",
+            (version["report_version_id"], request.insight_id),
+        )
+    ):
+        raise HTTPException(404, "Card is not in the selected report version")
     if not version or not version["profile_id"]:
         raise HTTPException(409, "An analytical report is not ready yet")
     payload = {
         "report_version_id": str(version["report_version_id"]),
         "user_id": str(user),
         "question": request.question,
+        "insight_id": str(request.insight_id) if request.insight_id else None,
     }
     job = enqueue("question", f"question:{user}:{request.request_id}", payload)
     return {"job_id": job["job_id"], "status": job["status"]}
