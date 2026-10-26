@@ -160,3 +160,69 @@ def test_short_onboarding():
 
 def test_digest_is_stable():
     assert digest({"b": 2, "a": 1}) == digest({"a": 1, "b": 2})
+
+
+def test_embedding_client_waits_while_model_is_busy(monkeypatch):
+    import httpx
+
+    from agent_common import embeddings
+    from agent_common.core import settings
+
+    cfg = {"model_id": "m", "model_revision": "r"}
+    replies = [429, 429, 200]
+
+    def post(url, json, timeout):
+        status = replies.pop(0)
+        body = {
+            "model": "m",
+            "revision": "r",
+            "dimensions": 1024,
+            "normalized": True,
+            "role": "document",
+            "embeddings": [[0.0] * 1023 + [1.0]],
+        }
+        return httpx.Response(status, json=body if status == 200 else {}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(embeddings.httpx, "post", post)
+    monkeypatch.setattr(embeddings.time, "sleep", lambda seconds: None)
+    assert len(embeddings.embed(["text"], "document", cfg)) == 1 and not replies
+
+    monkeypatch.setattr(settings, "embedding_wait_seconds", 0)
+    replies[:] = [429, 429]
+    import pytest
+
+    with pytest.raises(RuntimeError, match="busy or unavailable"):
+        embeddings.embed(["text"], "document", cfg)
+
+
+def test_tolerant_json_parsing_of_llm_output():
+    import pytest
+
+    from agent_common.runtime import parse_json_object
+
+    assert (
+        parse_json_object('```json\n{"action": "finish", "result": {"s": "\\"ставка\\""}}\n```')["action"]
+        == "finish"
+    )
+    assert parse_json_object('Вот ответ: {"a": [1, 2,], "b": {"c": 1,},} спасибо') == {
+        "a": [1, 2],
+        "b": {"c": 1},
+    }
+    with pytest.raises(ValueError, match="valid JSON"):
+        parse_json_object('{"a": "обрыв')
+    with pytest.raises(ValueError, match="JSON object"):
+        parse_json_object("нет json")
+
+
+def test_json_bracket_repair_for_small_models():
+    from agent_common.runtime import parse_json_object
+
+    assert parse_json_object('{"cards":[{"claims":[{"a":1}],"t":2},"lim":["x"],"changes":[]}') == {
+        "cards": [{"claims": [{"a": 1}], "t": 2}],
+        "lim": ["x"],
+        "changes": [],
+    }
+    assert parse_json_object('{"a":{"b":[1,2}}') == {"a": {"b": [1, 2]}}
+    assert parse_json_object('{"r":{"c":[{"x":"}]","refs":["F1"]}}}') == {
+        "r": {"c": [{"x": "}]", "refs": ["F1"]}]}
+    }

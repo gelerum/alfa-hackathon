@@ -147,3 +147,27 @@ def test_failure_releases_lock(client):
         with pytest.raises(RuntimeError, match="failed"):
             client.post("/embed", json={"role": "document", "inputs": ["text"]})
     assert not main.app.state.inference_lock.locked()
+
+
+def test_query_waits_for_running_batch_and_documents_yield(client):
+    import threading
+    import time
+
+    state = main.app.state
+    state.inference_lock.acquire()
+    results = {}
+    waiter = threading.Thread(
+        target=lambda: results.update(query=client.post("/embed", json={"role": "query", "inputs": ["q"]}))
+    )
+    waiter.start()
+    for _ in range(100):
+        if state.queries_waiting:
+            break
+        time.sleep(0.01)
+    assert state.queries_waiting == 1
+    # A bulk document request must not jump ahead of a waiting query.
+    assert client.post("/embed", json={"role": "document", "inputs": ["d"]}).status_code == 429
+    state.inference_lock.release()
+    waiter.join(timeout=5)
+    assert results["query"].status_code == 200
+    assert state.queries_waiting == 0 and not state.inference_lock.locked()

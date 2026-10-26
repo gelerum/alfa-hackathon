@@ -70,18 +70,20 @@ def main():
     ).strip()
     if initialized != "t":
         subprocess.run(command + ["exec", "-T", "db", "sh", "/usr/local/bin/init-empty-database"], check=True)
-    subprocess.run(
-        command
-        + [
-            "exec",
-            "-T",
-            "db",
-            "sh",
-            "-c",
-            'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /docker-entrypoint-initdb.d/04_retrieval_indexes.sql',
-        ],
-        check=True,
-    )
+    for migration in ("04_retrieval_indexes.sql", "05_observability.sql"):
+        subprocess.run(
+            command
+            + [
+                "exec",
+                "-T",
+                "db",
+                "sh",
+                "-c",
+                'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" '
+                f"-f /docker-entrypoint-initdb.d/{migration}",
+            ],
+            check=True,
+        )
     services = ["backend"] if args.ui else []
     subprocess.run(
         command + ["up", "-d", "--build", "--wait", "--wait-timeout", "1200"] + services, check=True

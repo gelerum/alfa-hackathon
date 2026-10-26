@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from uuid import uuid4
 
@@ -51,6 +52,83 @@ You must assess missing data and conflicts, use tools as needed and repair valid
 """
 
 
+def _balance_brackets(text):
+    """Repair the most common small-model slip: a missing ] or } before the next closer or at the end."""
+    out, stack, in_string, escaped, last_comma = [], [], False, False, None
+    pairs = {"{": "}", "[": "]"}
+    for char in text:
+        if in_string:
+            out.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == ",":
+            last_comma = len(out)
+        elif char == ":" and stack and stack[-1] == "]" and last_comma is not None:
+            # `[{...}, "key": ...` — the array was never closed before the next object key.
+            while stack and stack[-1] == "]":
+                out.insert(last_comma, stack.pop())
+                last_comma += 1
+        elif char in pairs:
+            stack.append(pairs[char])
+        elif char in "]}":
+            while stack and stack[-1] != char and char in stack:
+                out.append(stack.pop())
+            if not stack or stack[-1] != char:
+                continue  # stray closer
+            stack.pop()
+        out.append(char)
+        if not stack and char in "]}":
+            break
+    return "".join(out) + "".join(reversed(stack))
+
+
+def parse_json_object(content):
+    """Tolerant JSON extraction: servers without constrained decoding add fences, prose or trailing commas."""
+    text = content.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    start = text.find("{")
+    if start < 0:
+        raise ValueError("Expected a JSON object; response starts with: " + text[:200])
+    decoder = json.JSONDecoder()
+    error = None
+    trimmed = re.sub(r",\s*([}\]])", r"\1", text[start:])
+    for candidate in (text[start:], trimmed, _balance_brackets(trimmed)):
+        try:
+            value, _ = decoder.raw_decode(candidate)
+        except json.JSONDecodeError as exc:
+            error = exc
+            continue
+        if not isinstance(value, dict):
+            raise ValueError("Expected a JSON object")
+        return value
+    raise ValueError(
+        f"Expecting valid JSON ({error.msg} at char {error.pos}); fragment: {text[max(0, error.pos - 80) : error.pos + 80]}"
+    )
+
+
+def _preview(result, chars):
+    """Shorter copy for the model context; stored evidence and citations keep the full excerpt."""
+    if not chars or not isinstance(result, dict) or not result.get("sources"):
+        return result
+    return {
+        **result,
+        "sources": [
+            {**source, "excerpt": (source.get("excerpt") or "")[:chars]}
+            if isinstance(source, dict)
+            else source
+            for source in result["sources"]
+        ],
+    }
+
+
 class Runtime:
     def __init__(
         self,
@@ -83,7 +161,10 @@ class Runtime:
         self.sources = set()
         self.fact_ids = set()
         self.client = OpenAI(
-            base_url=settings.openai_base_url, api_key=settings.openai_api_key, timeout=90, max_retries=0
+            base_url=settings.openai_base_url,
+            api_key=settings.openai_api_key,
+            timeout=settings.openai_timeout_seconds,
+            max_retries=0,
         )
         with db() as conn:
             conn.execute(
@@ -110,7 +191,7 @@ class Runtime:
                 (self.run_id, self.step, kind, tool, j(arguments), j(result), status),
             )
 
-    def tool(self, name, args):
+    def tool(self, name, args, preview=None):
         remaining = settings.agent_timeout_seconds - (time.monotonic() - self.started)
         if remaining <= 0:
             raise TimeoutError("Agent budget exhausted")
@@ -138,6 +219,7 @@ class Runtime:
                     "user_note": ((result.get("preferences") or {}).get("raw_answers") or {}).get("note", "")[
                         :1000
                     ],
+                    "user_kpis": ((result.get("preferences") or {}).get("raw_answers") or {}).get("kpis", []),
                     "goals": result.get("user_goals", []),
                     "facts": [
                         {"fact_id": f["fact_id"], "field": f["field"], "value_preview": str(f["value"])[:250]}
@@ -166,7 +248,7 @@ class Runtime:
                 "content": "UNTRUSTED TOOL DATA "
                 + name
                 + ":\n"
-                + json.dumps(jsonable_encoder(result), ensure_ascii=False)[:70000],
+                + json.dumps(jsonable_encoder(_preview(result, preview)), ensure_ascii=False)[:70000],
             }
         )
         return result
@@ -190,11 +272,17 @@ class Runtime:
             > settings.agent_max_context_bytes
         ):
             raise ValueError("Input exceeds configured UTF-8 context byte budget")
-        response = self.client.with_options(timeout=min(90, remaining)).chat.completions.create(
+        extra = (
+            {"chat_template_kwargs": {"enable_thinking": False}} if settings.openai_disable_thinking else None
+        )
+        response = self.client.with_options(
+            timeout=min(settings.openai_timeout_seconds, remaining)
+        ).chat.completions.create(
             model=settings.openai_model,
             messages=messages,
             max_tokens=min(settings.openai_max_tokens, settings.agent_max_total_tokens - self.used_tokens),
             temperature=0.15,
+            extra_body=extra,
         )
         if response.usage:
             self.used_tokens += response.usage.total_tokens
@@ -203,15 +291,10 @@ class Runtime:
             )
         if response.choices[0].finish_reason == "length":
             raise ValueError("LLM result exceeded token limit")
-        text = (response.choices[0].message.content or "").strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1].rsplit("```", 1)[0]
-        value = json.loads(text)
-        if not isinstance(value, dict):
-            raise ValueError("Expected a JSON object")
+        value = parse_json_object(response.choices[0].message.content or "")
         return value
 
-    def run(self, *, task, schema, tools, validate, starters=()):
+    def run(self, *, task, schema, tools, validate, starters=(), prepare=None):
         self.messages = [
             {
                 "role": "system",
@@ -226,11 +309,22 @@ class Runtime:
             {"role": "user", "content": task},
         ]
         self.log("plan", result={"task": task[:1500], "available_tools": tools})
-        for name, args in starters:
-            self.tool(name, args)
+        results = [self.tool(*starter) for starter in starters]
+        if prepare:
+            # Trusted, system-computed context (e.g. deterministic facts) derived from starter results.
+            prepared = prepare(self, results)
+            # prepare may compact/replace self.messages; resolve append only after it returns.
+            self.messages.append({"role": "user", "content": prepared})
+        reviews_failed = 0
         for turn in range(settings.agent_max_steps):
             try:
                 action = self.complete_json(self.messages)
+                if "action" not in action:
+                    # Small models often skip the envelope: treat a bare result object as finish.
+                    if isinstance(action.get("result"), dict):
+                        action = {"action": "finish", "result": action["result"]}
+                    elif set(schema.model_fields) & set(action):
+                        action = {"action": "finish", "result": action}
                 self.messages.append({"role": "assistant", "content": json.dumps(action, ensure_ascii=False)})
                 if action.get("action") == "plan":
                     self.log("plan", result={"summary": str(action.get("summary", ""))[:1000]})
@@ -242,20 +336,46 @@ class Runtime:
                     draft = schema.model_validate(action["result"])
                     validate(draft, self)
                     self.log("validation", result={"structural_and_evidence_checks": "passed"})
+                    # Review the normalized draft (resolved refs and system-copied quotations),
+                    # not the model's original, possibly incomplete envelope.
+                    self.messages[-1] = {
+                        "role": "assistant",
+                        "content": json.dumps(
+                            {"action": "finish", "result": draft.model_dump(mode="json")}, ensure_ascii=False
+                        ),
+                    }
                     # A separate review call sees the evidence and candidate, not private chain of thought.
-                    review = self.complete_json(
-                        self.messages
-                        + [
-                            {
-                                "role": "user",
-                                "content": "Review this candidate against the retrieved evidence. Check unsupported claims, "
-                                "causal leaps, dates, company-specific linkage and attribution of Alfa bank position. "
-                                'Return ONLY {"valid":true|false,"issues":["..."]}. Do not invent evidence.',
-                            }
-                        ]
+                    try:
+                        review = self.complete_json(
+                            self.messages
+                            + [
+                                {
+                                    "role": "user",
+                                    "content": "Review this candidate against the retrieved evidence. Check unsupported "
+                                    "claims, causal leaps, dates, company-specific linkage and attribution of Alfa bank "
+                                    'position. Return ONLY {"valid":true|false,"issues":["..."]} with issues in Russian. '
+                                    "Do not invent evidence.",
+                                }
+                            ]
+                        )
+                    except ValueError as exc:
+                        review = {
+                            "valid": False,
+                            "issues": ["Самопроверка не вернула корректный ответ: " + str(exc)[:200]],
+                        }
+                    issues = [str(i)[:500] for i in (review.get("issues") or [])] or (
+                        []
+                        if review.get("valid") is True
+                        else ["Самопроверка отклонила результат без пояснений"]
                     )
-                    if review.get("valid") is not True or review.get("issues"):
+                    if issues and reviews_failed < 2:
+                        reviews_failed += 1
                         raise ValueError("Self-review issues: " + json.dumps(review, ensure_ascii=False))
+                    if issues:
+                        # Never publish a draft rejected by self-review just to save tokens.
+                        raise RuntimeError(
+                            "Self-review rejected the repaired result: " + "; ".join(issues)[:1500]
+                        )
                     self.log("validation", result={"self_review": review})
                     self.log("synthesis", result={"schema": schema.__name__})
                     return draft

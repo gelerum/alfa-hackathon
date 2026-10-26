@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from agent_common.core import encode as jsonable_encoder
 
-from agent_common.contracts import ProfileDraft
+from agent_common.contracts import FactDraft, ProfileDraft, ProfileFocusDraft
 from agent_common.core import db, digest, j, membership, one
 from agent_common.embeddings import config, query_embedding
 from agent_common.runtime import Runtime
@@ -50,6 +50,79 @@ def validate_profile(draft, runtime):
     for facet in draft.facets:
         if any(i < 0 or i >= len(draft.facts) for i in facet.fact_indexes):
             raise ValueError("Facet references an unknown fact index")
+
+
+# Bank row fields copied verbatim into the profile; the LLM never re-types them.
+BANK_FACT_FIELDS = (
+    "main_okved_name",
+    "main_okved_code",
+    "registration_city",
+    "registration_region",
+    "revenue_value",
+    "employees_fns_band",
+    "company_age_band",
+    "eco_mark_label",
+    "okfs_name",
+    "cl_type",
+    "loan_mark",
+    "leasing_mark",
+    "factoring_mark",
+    "fts_flag",
+    "fts_country_name",
+    "group_id",
+)
+AGGREGATE_FACT_FIELDS = {"incoming": "payments_incoming", "outgoing": "payments_outgoing"}
+
+
+def _fragment(key, value):
+    return json.dumps({key: value}, ensure_ascii=False)[1:-1]
+
+
+def bank_facts(bank_result):
+    """Deterministic, exactly grounded facts from the company_bank_data.get result."""
+    facts = []
+    for source in (bank_result or {}).get("sources", []):
+        excerpt = source.get("excerpt") or ""
+        try:
+            data = json.loads(excerpt)
+        except ValueError:
+            continue
+        sid = [str(source["source_id"])]
+        if source.get("source_type") == "bank_import":
+            for key in BANK_FACT_FIELDS:
+                value = data.get(key)
+                quote = _fragment(key, value)
+                if value in (None, "") or quote not in excerpt:
+                    continue
+                text = str(value).lower() if isinstance(value, bool) else str(value)
+                facts.append(FactDraft(field=key, value=text, source_ids=sid, evidence_quote=quote))
+        elif source.get("source_type") == "derived" and isinstance(data, dict):
+            for item in data.get("aggregates") or []:
+                field = AGGREGATE_FACT_FIELDS.get(item.get("direction"))
+                quote = json.dumps(item, ensure_ascii=False)
+                if field and quote in excerpt:
+                    facts.append(FactDraft(field=field, value=quote, source_ids=sid, evidence_quote=quote))
+            for group in data.get("corporate_groups") or []:
+                quote = json.dumps(group, ensure_ascii=False)
+                if quote in excerpt:
+                    facts.append(
+                        FactDraft(field="corporate_group", value=quote, source_ids=sid, evidence_quote=quote)
+                    )
+    return facts
+
+
+def _facts_prompt(facts):
+    lines = [f"[{i}] {f.field} = {f.value[:300]}" for i, f in enumerate(facts)]
+    return (
+        "VERIFIED COMPANY FACTS (system-extracted from bank data, already stored with sources; do NOT repeat them):\n"
+        + ("\n".join(lines) or "(no bank facts)")
+        + "\nReturn action=finish with ONLY: summary (2-4 Russian sentences), 3-6 facets for news search "
+        "(facet text in Russian, 3-10 Russian keywords each, fact_indexes = indexes from the list above), "
+        "missing_data, conflicts (all in Russian, for a business reader: say «компания», never print company "
+        "IDs or field names like loan_mark). Add document_facts only for facts read from uploaded company "
+        "documents (field = short Russian label), "
+        "with exact quotes; their indexes continue after the list above. Finish now unless a document must be read."
+    )
 
 
 def company_inputs(conn, company_id):
@@ -118,7 +191,7 @@ def profile_job(payload):
     answers = (
         answer["answers"]
         if answer
-        else {"role": "Руководитель", "responsibilities": [], "goals": [], "note": ""}
+        else {"role": "Руководитель", "responsibilities": [], "goals": [], "kpis": [], "note": ""}
     )
     with db() as conn:
         inputs = company_inputs(conn, company_id)
@@ -134,25 +207,46 @@ def profile_job(payload):
     try:
         if not existing:
             runtime = Runtime("company_profiler", company_id, user_id, snapshot={"company_inputs": inputs})
-            draft = runtime.run(
-                task="Build a shared COMPANY profile only, never personal goals or user-specific assumptions. "
-                "Use bank evidence, uploaded company documents and explicit shared company clarifications. "
-                "User clarifications are reported information, not independent verification. Preserve missing data and conflicts. "
-                "Facts need exact evidence quotes and source IDs. Facet fact_indexes are zero-based. "
-                "Web is optional generic industry research, never a source of company identity. "
-                "One concise clarification question is allowed only for a major unresolved gap. "
-                "Failed documents: " + json.dumps(jsonable_encoder(inputs["documents"]), ensure_ascii=False),
-                schema=ProfileDraft,
-                tools=PROFILE_TOOLS,
-                validate=validate_profile,
-                starters=[
-                    ("company_bank_data.get", {}),
+            fixed = []
+
+            def prepare(run, results):
+                fixed.extend(bank_facts(results[0] if results else None))
+                return _facts_prompt(fixed)
+
+            def combine(focus):
+                return ProfileDraft(
+                    summary=focus.summary,
+                    facts=[*fixed, *focus.document_facts],
+                    facets=focus.facets,
+                    missing_data=focus.missing_data,
+                    conflicts=focus.conflicts,
+                    clarification=focus.clarification,
+                )
+
+            ready_documents = any(d["processing_status"] == "ready" for d in inputs["documents"])
+            starters = [("company_bank_data.get", {})]
+            if ready_documents:
+                starters.append(
                     (
                         "company_documents.search",
-                        {"query": "деятельность компании продукция рынки финансы", "limit": 10},
-                    ),
-                ],
+                        {"query": "деятельность компании продукция рынки финансы", "limit": 6},
+                    )
+                )
+            focus = runtime.run(
+                task="Build a shared COMPANY profile only, never personal goals or user-specific assumptions. "
+                "Bank facts are already extracted for you; your job is interpretation for news selection. "
+                "User clarifications are reported information, not independent verification. Preserve missing data "
+                "and conflicts. Facet fact_indexes are zero-based. Web is optional generic industry research, "
+                "never a source of company identity. One concise clarification question is allowed only for a major "
+                "unresolved gap. Failed documents: "
+                + json.dumps(jsonable_encoder(inputs["documents"]), ensure_ascii=False),
+                schema=ProfileFocusDraft,
+                tools=PROFILE_TOOLS,
+                validate=lambda focus, run: validate_profile(combine(focus), run),
+                starters=starters,
+                prepare=prepare,
             )
+            draft = combine(focus)
             cfg = config()
             facet_vectors = [(facet, query_embedding(facet.text, cfg)) for facet in draft.facets]
         else:
@@ -168,6 +262,13 @@ def profile_job(payload):
             + ". Фокус пользователя: "
             + answers.get("note", "")
         )[:1800]
+        if answers.get("kpis"):
+            personal_text = (
+                "Мои KPI (приоритеты пользователя, не достигнутые результаты): "
+                + "; ".join(answers["kpis"])
+                + "\n"
+                + personal_text
+            )[:1800]
         personal_embedding = query_embedding(personal_text, cfg)
         with db() as conn:
             conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("profile:" + company_id,))
@@ -230,7 +331,7 @@ def profile_job(payload):
                             ),
                             j(draft.missing_data),
                             j(draft.conflicts),
-                            "profiler-v1",
+                            "profiler-v2",
                         ),
                     )
                     fact_ids = []

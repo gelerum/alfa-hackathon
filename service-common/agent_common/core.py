@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     storage_dir: Path = Path("/tmp/alpha-storage")
     embedding_base_url: str = "http://localhost:8001"
     embedding_config_key: str = "qwen3-embedding-0.6b@97b0c614:v1"
+    embedding_wait_seconds: int = 300
     gateway_url: str = "http://localhost:8090"
     searxng_base_url: str = "http://localhost:8080"
     bank_source_url: str = "http://localhost:8091"
@@ -37,6 +38,9 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "qwen3.6-35b-a3b"
     openai_max_tokens: int = 6000
+    openai_timeout_seconds: int = 240
+    # Qwen3-style reasoning models: thinking is slow on local GPUs; agent turns need short JSON answers.
+    openai_disable_thinking: bool = False
     agent_max_steps: int = 8
     agent_max_tool_calls: int = 140
     agent_max_total_tokens: int = 80000
@@ -51,6 +55,10 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+class ServiceBusy(RuntimeError):
+    """A dependency is temporarily saturated; the job should wait without consuming an attempt."""
 
 
 def now() -> datetime:

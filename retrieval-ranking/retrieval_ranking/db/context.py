@@ -86,7 +86,8 @@ class ContextReader:
         row = connection.execute(
             """
             SELECT user_context_id, user_id, context_version, business_role, responsibility,
-                   focus_topics, interest_markets, watchlist
+                   focus_topics, interest_markets, watchlist,
+                   coalesce(raw_answers->'kpis', '[]'::jsonb) AS kpis
             FROM user_preferences
             WHERE company_id = %(company)s AND user_id = %(user)s AND status = 'ready'
               AND published_at <= %(as_of)s

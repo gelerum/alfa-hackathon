@@ -65,10 +65,22 @@ def embed(texts, role, cfg):
     body = {"role": role, "inputs": texts}
     if role == "query":
         body["instruction"] = QUERY_INSTRUCTION
-    for attempt in range(8):
-        response = httpx.post(settings.embedding_base_url + "/embed", json=body, timeout=90)
+    # The CPU model is shared with bulk news indexing: wait for it instead of failing the profile.
+    deadline = time.monotonic() + settings.embedding_wait_seconds
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            response = httpx.post(settings.embedding_base_url + "/embed", json=body, timeout=180)
+        except httpx.TransportError:
+            if time.monotonic() >= deadline:
+                raise RuntimeError("Embedding service unreachable") from None
+            time.sleep(min(2**attempt, 10))
+            continue
         if response.status_code in (429, 503):
-            time.sleep(min(2**attempt, 8))
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(min(2**attempt, 5))
             continue
         response.raise_for_status()
         result = response.json()
@@ -87,7 +99,7 @@ def embed(texts, role, cfg):
         for vector in result["embeddings"]:
             vector_literal(vector)
         return result["embeddings"]
-    raise RuntimeError("Embedding service remained unavailable")
+    raise RuntimeError("Embedding service remained busy or unavailable")
 
 
 def query_embedding(text, cfg):

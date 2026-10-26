@@ -30,6 +30,7 @@ def database(monkeypatch, tmp_path):
     with psycopg.connect(scoped, autocommit=True) as conn:
         conn.execute((Path(__file__).resolve().parents[2] / "database/schema.sql").read_text())
         conn.execute((Path(__file__).resolve().parents[2] / "database/application.sql").read_text())
+        conn.execute((Path(__file__).resolve().parents[2] / "database/observability.sql").read_text())
     yield scoped
     with psycopg.connect(dsn, autocommit=True) as conn:
         conn.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))

@@ -3,7 +3,7 @@ from datetime import timedelta
 import httpx
 from fastapi import HTTPException
 
-from agent_common.core import all_rows, db, digest, execute, j, monday_window, now, one, settings
+from agent_common.core import ServiceBusy, all_rows, db, digest, execute, j, monday_window, now, one, settings
 
 
 def create_report(company_id, user_id, trigger_type, key, end=None):
@@ -193,6 +193,8 @@ def dispatch_ranking(payload):
                 headers={"Authorization": f"Bearer {settings.internal_token}"},
                 timeout=settings.ranker_timeout_seconds,
             )
+            if response.status_code == 429:
+                raise ServiceBusy("Ranker is busy with another report")
             response.raise_for_status()
             run_id = str(response.json()["ranking_run_id"])
         execute(

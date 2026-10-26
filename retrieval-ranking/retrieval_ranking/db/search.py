@@ -214,6 +214,7 @@ def lexical_terms(context: CompanyContext, settings: Settings) -> list[str]:
     raw: list[Any] = []
     if context.preferences:
         raw.extend(context.preferences.watchlist)
+        raw.extend(context.preferences.kpis)
         raw.extend(context.preferences.focus_topics)
         raw.extend(context.preferences.interest_markets)
     if context.company_name:

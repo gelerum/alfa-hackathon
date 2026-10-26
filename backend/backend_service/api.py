@@ -3,8 +3,8 @@ import secrets
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import Field
 
@@ -22,7 +22,9 @@ from agent_common.core import (
     one,
     settings,
 )
-from backend_service.demo import create_demo_session
+from backend_service.demo import create_demo_session, suggested_answers
+from backend_service import observability
+from backend_service.progress import pipeline
 from backend_service.documents import SUPPORTED
 from backend_service.reports import create_report, request_ranking
 
@@ -55,6 +57,14 @@ def health():
 _FRONT_INDEX = _FRONTEND_DIR / "index.html"
 
 
+@app.get("/dev", response_class=HTMLResponse)
+def serve_dev_console():
+    page = _FRONTEND_DIR / "dev.html"
+    if page.exists():
+        return page.read_text(encoding="utf-8")
+    raise HTTPException(404)
+
+
 @app.get("/", response_class=HTMLResponse)
 def serve_frontend():
     if _FRONT_INDEX.exists():
@@ -78,6 +88,36 @@ def metrics():
             "AND input_snapshot @> '{\"deadline_fallback\":true}'::jsonb"
         ),
     }
+
+
+@api_router.get("/admin/observability", dependencies=[Depends(admin)])
+def observability_snapshot():
+    """Developer overview: dependency health, workers, queues, failures, agents, tools, data freshness."""
+    return observability.snapshot()
+
+
+@api_router.get("/admin/metrics/prometheus", dependencies=[Depends(admin)], response_class=PlainTextResponse)
+def prometheus_metrics():
+    """Prometheus text exposition; scrape with `Authorization: Bearer $ADMIN_TOKEN`."""
+    return PlainTextResponse(observability.prometheus(), media_type="text/plain; version=0.0.4")
+
+
+@api_router.get("/admin/agent-runs", dependencies=[Depends(admin)])
+def list_agent_runs(
+    limit: int = Query(50, ge=1, le=500),
+    agent: str | None = None,
+    status: str | None = None,
+    company_id: str | None = None,
+):
+    return observability.agent_runs(limit, agent, status, company_id)
+
+
+@api_router.get("/admin/agent-runs/{agent_run_id}", dependencies=[Depends(admin)])
+def agent_run_trace(agent_run_id: UUID):
+    trace = observability.agent_run(agent_run_id)
+    if not trace:
+        raise HTTPException(404)
+    return trace
 
 
 @api_router.post("/admin/demo", dependencies=[Depends(admin)])
@@ -122,11 +162,17 @@ def demo_session():
 
 @api_router.get("/companies")
 def companies(user: UUID = Depends(current_user)):
-    return all_rows(
-        "SELECT c.*,m.business_role,m.access_role FROM companies c JOIN company_memberships m USING(company_id) "
-        "WHERE m.user_id=%s AND m.is_active",
+    rows = all_rows(
+        "SELECT c.*,m.business_role,m.access_role,b.main_okved_name,b.registration_city,b.revenue_value "
+        "FROM companies c JOIN company_memberships m USING(company_id) "
+        "LEFT JOIN LATERAL (SELECT d.main_okved_name,d.registration_city,d.revenue_value "
+        "FROM bank_company_data d JOIN bank_import_batches s USING(source_snapshot_id) "
+        "WHERE d.company_id=c.company_id AND s.status='ready' ORDER BY d.bank_record_id DESC LIMIT 1) b ON true "
+        "WHERE m.user_id=%s AND m.is_active ORDER BY c.legal_name NULLS LAST,c.company_id",
         (user,),
     )
+    # Editable onboarding prefill; nothing is stored until the user saves the form.
+    return [{**row, "suggested_answers": suggested_answers(row["company_id"])} for row in rows]
 
 
 @api_router.post("/companies/{company_id}/onboarding", status_code=202)
@@ -282,6 +328,13 @@ def get_context(company_id: str, user: UUID = Depends(current_user)):
     }
 
 
+@api_router.get("/companies/{company_id}/pipeline")
+def get_pipeline(company_id: str, user: UUID = Depends(current_user)):
+    """Current processing stages and the fixed (published) company profile and user focus."""
+    membership(company_id, user)
+    return pipeline(company_id, user)
+
+
 class ReportRequest(StrictModel):
     request_id: UUID
 
@@ -289,6 +342,19 @@ class ReportRequest(StrictModel):
 @api_router.post("/companies/{company_id}/reports", status_code=202)
 def generate_report(company_id: str, request: ReportRequest, user: UUID = Depends(current_user)):
     membership(company_id, user)
+    running = one(
+        "SELECT r.* FROM reports r WHERE r.company_id=%s AND r.user_id=%s AND r.trigger_type='on_demand' "
+        "AND r.created_at>now()-interval '2 hours' "
+        "AND NOT EXISTS(SELECT 1 FROM report_versions v WHERE v.report_id=r.report_id AND v.status='published') "
+        "AND NOT EXISTS(SELECT 1 FROM ranking_requests q WHERE q.report_id=r.report_id AND q.status='failed') "
+        "AND NOT EXISTS(SELECT 1 FROM ranking_requests q JOIN jobs jb ON jb.idempotency_key='insight:'||q.request_id "
+        "WHERE q.report_id=r.report_id AND jb.status='failed') "
+        "ORDER BY r.created_at DESC LIMIT 1",
+        (company_id, user),
+    )
+    if running:
+        # One report at a time per user: repeated clicks must not start parallel rankings and agents.
+        return {"report": running, "ranking_request": None, "status": "already_running"}
     report = create_report(company_id, user, "on_demand", f"on-demand:{user}:{request.request_id}")
     ranking = request_ranking(report)
     return {

@@ -18,6 +18,7 @@ QUERY_INSTRUCTION = (
 )
 logger = logging.getLogger("uvicorn.error")
 MAX_BODY_BYTES = 2 * 1024 * 1024
+QUERY_WAIT_SECONDS = float(os.getenv("QUERY_WAIT_SECONDS", "120"))
 
 
 class RequestSizeLimit:
@@ -130,6 +131,8 @@ def load_model():
 async def lifespan(app: FastAPI):
     app.state.model = load_model()
     app.state.inference_lock = threading.Lock()
+    app.state.queries_waiting = 0
+    app.state.waiting_lock = threading.Lock()
     logger.info("Embedding service ready")
     yield
     del app.state.model
@@ -156,8 +159,20 @@ def health(request: Request):
 @app.post("/embed", response_model=EmbedResponse)
 def embed(body: EmbedRequest, request: Request):
     model = request.app.state.model
-    # Do not queue an unbounded number of CPU-heavy jobs in the web thread pool.
-    if not request.app.state.inference_lock.acquire(blocking=False):
+    state = request.app.state
+    # Do not queue an unbounded number of CPU-heavy jobs in the web thread pool. Short interactive
+    # queries (profiles, agent search) wait for the current batch; bulk documents yield to them.
+    if body.role == "query":
+        with state.waiting_lock:
+            state.queries_waiting += 1
+        try:
+            acquired = state.inference_lock.acquire(timeout=QUERY_WAIT_SECONDS)
+        finally:
+            with state.waiting_lock:
+                state.queries_waiting -= 1
+    else:
+        acquired = not state.queries_waiting and state.inference_lock.acquire(blocking=False)
+    if not acquired:
         raise HTTPException(429, "Model is busy; retry later", headers={"Retry-After": "1"})
     try:
         instruction = (body.instruction or QUERY_INSTRUCTION) if body.role == "query" else None

@@ -9,7 +9,7 @@
 <header class="header">
   <a class="brand" href="/" aria-label="Альфа-Бизнес, главная"><span class="brand-mark">А</span> Альфа-Бизнес</a>
   <div class="header-right"><span class="demo-label">Демонстрационный стенд</span>
-    <select id="companySelect" aria-label="Текущая компания"><option value="">Подключение…</option></select>
+    <label class="company-switch"><span>Компания</span><select id="companySelect" aria-label="Текущая компания"><option value="">Подключение…</option></select></label>
     <span id="userName"></span><button id="logoutBtn" class="quiet" hidden>Выйти</button>
   </div>
 </header>
@@ -35,7 +35,7 @@
   <section id="dashboardScreen" class="screen">
     <div class="bank-actions" aria-label="Демонстрационные банковские действия"><span>↓ Скачать выписку</span><span>⇄ Импорт платежей</span><span>＋ Создать платёж</span></div>
     <div class="bank-hero">
-      <div><span class="eyebrow">Счета компании</span><div class="balance">— ₽</div><p>Остатки и банковские операции не подключены к прототипу</p><small id="dashCompany"></small></div>
+      <div><span class="eyebrow">Счета компании</span><div class="balance">— ₽</div><p>Остатки и банковские операции не подключены к прототипу</p><strong id="dashCompany" class="hero-company"></strong><small id="dashCompanyDetails"></small></div>
       <div class="hero-side"><span class="eyebrow">Персональная аналитика</span><h2>Не просто новости.<br>Значение для бизнеса.</h2><p>Компания, ваша роль и подтверждённые источники — в основе каждого вывода.</p></div>
     </div>
     <div class="tabs"><strong>Сводка</strong><span>Бизнес-обзор</span></div>
@@ -44,8 +44,9 @@
       <button id="generateBtn" class="primary">Подготовить обзор</button>
     </section>
     <div class="context-row"><span id="contextStatus">Проверяем контекст…</span><button id="startOnboardingBtn" class="quiet">Настроить мой фокус →</button></div>
-    <div id="onboardingPrompt" class="panel subtle" hidden><h3>Что важно именно вам?</h3><p>Укажите роль и задачи. Документы компании можно добавить по желанию — без них будут использованы доступные банковские данные.</p></div>
-    <div id="pendingProfile" class="panel subtle" hidden>Профиль обрабатывается. Обзор появится после завершения анализа.</div>
+    <div id="onboardingPrompt" class="panel subtle" hidden><h3>Что важно именно вам?</h3><p>Укажите роль, задачи и KPI. Документы компании можно добавить по желанию — без них будут использованы доступные банковские данные.</p></div>
+    <section id="pipelinePanel" class="panel pipeline" aria-live="polite" hidden><div class="pipeline-head"><h3>Что сейчас происходит</h3><small id="pipelineUpdated"></small></div><ol id="pipelineStages"></ol></section>
+    <section id="fixedProfile" class="fixed-profile" hidden></section>
     <div id="reportsList" class="reports-grid"></div>
     <div id="emptyState" class="panel empty" hidden><h3>Здесь появится ваш первый обзор</h3><p>Настройте фокус и нажмите «Подготовить обзор». Для анализа нужны работающие workers, LLM и внешний ranker. Мы не подменяем их заранее написанными выводами.</p></div>
   </section>
@@ -56,11 +57,12 @@
   </section>
   <section id="onboardingScreen" class="screen">
     <button id="backFromOnboarding" class="quiet">← Сводка</button>
-    <div class="section-heading"><div><span class="eyebrow">Персонализация</span><h1>Мой фокус и документы</h1><p>Роль и цели относятся к вам в выбранной компании, документы — к контексту компании.</p></div></div>
+    <div class="section-heading"><div><span class="eyebrow">Персонализация</span><h1>Мой фокус и документы</h1><p>Роль, цели и KPI относятся к вам в выбранной компании, документы — к контексту компании.</p><p id="obPrefillHint" class="muted" hidden>Поля заполнены примером для демо-компании — проверьте, отредактируйте и сохраните.</p></div></div>
     <form id="onboardingForm" class="panel form-panel">
       <label>Ваша роль<input id="obRole" placeholder="Например, руководитель казначейства" maxlength="200" required></label>
       <label>За что отвечаете <small>До 8 направлений, каждое с новой строки</small><textarea id="obResponsibilities" rows="3" placeholder="Ликвидность\nВалютные риски" maxlength="1600"></textarea></label>
       <label>Цели <small>До 3 целей, каждая с новой строки</small><textarea id="obGoals" rows="3" placeholder="Снизить стоимость финансирования" maxlength="1500"></textarea></label>
+      <label>Какие показатели важно улучшить или удержать <small>До 3 KPI, каждый с новой строки</small><textarea id="obKpis" rows="3" placeholder="Стоимость заёмного финансирования, % годовых" maxlength="620"></textarea></label>
       <label>Дополнительный фокус<textarea id="obNote" rows="2" maxlength="1000" placeholder="Какие решения вам предстоит принять?"></textarea></label>
       <label>Документы компании <small>PDF, DOCX, XLSX или изображения</small><input id="fileInput" type="file" multiple accept=".pdf,.docx,.xlsx,.png,.jpg,.jpeg,.tiff,.webp"></label>
       <div id="fileList"></div><button id="obSubmit" class="primary">Сохранить фокус</button><p id="obSubmitStatus" role="status"></p>

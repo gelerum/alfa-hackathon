@@ -6,6 +6,7 @@ COPY --chmod=0644 database/schema.sql /docker-entrypoint-initdb.d/01_schema.sql
 COPY --chmod=0644 database/import.sql /docker-entrypoint-initdb.d/02_import.sql
 COPY --chmod=0644 database/application.sql /docker-entrypoint-initdb.d/03_application.sql
 COPY --chmod=0644 database/retrieval_indexes.sql /docker-entrypoint-initdb.d/04_retrieval_indexes.sql
+COPY --chmod=0644 database/observability.sql /docker-entrypoint-initdb.d/05_observability.sql
 COPY --chmod=0644 database/df_Uid_data_hack.csv /csv/df_Uid_data_hack.csv
 COPY --chmod=0644 database/df_Uid_payment_hack.csv /csv/df_Uid_payment_hack.csv
 COPY --chmod=0644 database/df_Fid_Uid_link_hack.csv /csv/df_Fid_Uid_link_hack.csv

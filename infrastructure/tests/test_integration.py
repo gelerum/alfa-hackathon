@@ -94,22 +94,10 @@ def fake_embeddings(demo, monkeypatch):
 def fake_profile_llm(self, messages):
     if "Review this candidate" in messages[-1]["content"]:
         return {"valid": True, "issues": []}
-    source = one(
-        "SELECT * FROM evidence_sources WHERE source_id=ANY(%s::uuid[]) AND source_type='bank_import' LIMIT 1",
-        (list(self.sources),),
-    )
     return {
         "action": "finish",
         "result": {
             "summary": "Компания производит оборудование.",
-            "facts": [
-                {
-                    "field": "activity",
-                    "value": "Производство оборудования",
-                    "source_ids": [str(source["source_id"])],
-                    "evidence_quote": "Производство оборудования",
-                }
-            ],
             "facets": [
                 {
                     "facet_type": "activity",
@@ -124,17 +112,17 @@ def fake_profile_llm(self, messages):
     }
 
 
-def seed_news(article="a1", published_at=None):
+def seed_news(article="a1", published_at=None, body="Стоимость финансирования сохраняется."):
     published_at = published_at or now() - timedelta(hours=3)
     with db() as conn:
         conn.execute(
             "INSERT INTO news(article_id,canonical_url,source_name,title,body,published_at,content_version) "
-            "VALUES(%s,%s,'test','Ключевая ставка сохранена','Стоимость финансирования сохраняется.',%s,'v1')",
-            (article, "https://example.org/" + article, published_at),
+            "VALUES(%s,%s,'test','Ключевая ставка сохранена',%s,%s,'v1')",
+            (article, "https://example.org/" + article, body, published_at),
         )
         conn.execute(
             "INSERT INTO news_revisions(article_id,content_version,title,body,published_at) VALUES(%s,'v1',%s,%s,%s)",
-            (article, "Ключевая ставка сохранена", "Стоимость финансирования сохраняется.", published_at),
+            (article, "Ключевая ставка сохранена", body, published_at),
         )
 
 
@@ -227,6 +215,10 @@ def test_full_report_and_late_arrival_revision(demo, fake_embeddings, monkeypatc
             (list(self.sources),),
         )
         fact_id = str(next(iter(self.fact_ids)))
+        news_sources = all_rows(
+            "SELECT source_id FROM evidence_sources WHERE source_id=ANY(%s::uuid[]) AND source_type='news'",
+            (list(self.sources),),
+        )
         return {
             "action": "finish",
             "result": {
@@ -248,7 +240,7 @@ def test_full_report_and_late_arrival_revision(demo, fake_embeddings, monkeypatc
                             {
                                 "kind": "ai_inference",
                                 "statement": "Следует проверить чувствительность бюджета.",
-                                "source_ids": [str(source["source_id"])],
+                                "source_ids": [str(item["source_id"]) for item in news_sources],
                                 "fact_ids": [fact_id],
                             },
                         ],
@@ -267,14 +259,18 @@ def test_full_report_and_late_arrival_revision(demo, fake_embeddings, monkeypatc
     job = one("SELECT * FROM jobs WHERE job_id=%s", (accepted["job_id"],))
     first = insights.insight_job(job["payload"])
     assert first["version"] == 2
-    assert one("SELECT count(*) AS n FROM insight_claim_sources")["n"] == 2
-    assert one("SELECT count(*) AS n FROM insight_claim_facts")["n"] == 1
+    # A single publication cannot establish a multi-source business conclusion.
+    assert one("SELECT count(*) AS n FROM insight_claim_sources")["n"] == 0
+    assert one("SELECT count(*) AS n FROM insight_claim_facts")["n"] == 0
     assert one("SELECT input_snapshot FROM report_versions WHERE version=1")["input_snapshot"][
         "deadline_fallback"
     ]
     assert insights.insight_job(job["payload"])["report_version_id"] == first["report_version_id"]
     # Published before cutoff, fetched only after first report: same fixed window, new version.
-    seed_news("a2", report["window_end"] - timedelta(hours=2))
+    seed_news(
+        "a2", report["window_end"] - timedelta(hours=2), body="Банки сообщили об условиях новых кредитов."
+    )
+    execute("UPDATE news SET canonical_url='https://second-publisher.org/a2' WHERE article_id='a2'")
     second_request = request_ranking(report)
     assert second_request["request_id"] != first_request["request_id"]
     accepted2 = insights.accept_insight(
@@ -444,7 +440,10 @@ def test_gateway_scope_is_server_pinned_and_capabilities_are_separate(demo, monk
     runtime.finish(False)
 
 
-def test_gateway_run_capability_expires(demo):
+def test_gateway_run_capability_expires(demo, monkeypatch):
+    from agent_common.core import settings
+
+    monkeypatch.setattr(settings, "agent_timeout_seconds", 600)
     runtime = Runtime("company_profiler", **demo)
     execute(
         "UPDATE agent_runs SET started_at=now()-interval '11 minutes' WHERE agent_run_id=%s",
@@ -884,3 +883,47 @@ def test_onboarding_job_insert_failure_rolls_back_answer(demo):
     assert response.status_code == 500
     assert one("SELECT count(*) AS n FROM onboarding_answers")["n"] == before
     assert one("SELECT count(*) AS n FROM jobs WHERE kind='profile'")["n"] == 0
+
+
+def test_pipeline_shows_fixed_profile_focus_and_agent_trace(demo, fake_embeddings, monkeypatch):
+    from backend_service.progress import pipeline
+
+    monkeypatch.setattr(Runtime, "complete_json", fake_profile_llm)
+    with db() as conn:
+        answer = conn.execute(
+            "INSERT INTO onboarding_answers(company_id,user_id,answers) VALUES('U_demo',%s,%s) RETURNING answer_id",
+            (
+                demo["user_id"],
+                j(
+                    {
+                        "role": "Казначей",
+                        "responsibilities": [],
+                        "goals": ["Ликвидность"],
+                        "kpis": ["Покрытие платежей, дней"],
+                        "note": "",
+                    }
+                ),
+            ),
+        ).fetchone()["answer_id"]
+        conn.execute(
+            "INSERT INTO jobs(kind,idempotency_key,payload) VALUES('profile','answers:x',%s)",
+            (j({**demo, "answer_id": answer}),),
+        )
+    job = claim(["profile"])
+    in_progress = {s["key"]: s for s in pipeline("U_demo", demo["user_id"])["stages"]}
+    assert in_progress["profile"]["state"] == "active"
+    finish(job, {"ok": True, "result": profiler.profile_job(job["payload"])})
+    body = pipeline("U_demo", demo["user_id"])
+    stages = {s["key"]: s for s in body["stages"]}
+    assert (
+        stages["profile"]["state"] == "done"
+        and stages["profile"]["detail"] == "Профиль собран — по нему подбираются новости"
+    )
+    assert stages["report"]["detail"] == "Нажмите «Подготовить обзор»"
+    assert body["profile"]["summary"] == "Компания производит оборудование."
+    facts = {f["field"]: f["value"] for f in body["profile"]["facts"]}
+    assert facts["main_okved_name"] == "Производство оборудования" and facts["loan_mark"] == "true"
+    assert body["profile"]["facets"][0]["keywords"] == ["оборудование"]
+    assert body["profile"]["missing_data"] == ["Условия кредитования неизвестны"]
+    assert body["user_context"]["role"] == "Казначей"
+    assert body["user_context"]["kpis"] == ["Покрытие платежей, дней"]

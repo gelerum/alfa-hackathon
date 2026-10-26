@@ -32,5 +32,10 @@ git clone "$REPO_URL" alpha && cd alpha/infrastructure && ./run.sh
 Только интерфейс с БД: добавьте `--ui` к выбранному скрипту.
 Проверить конфигурацию без запуска: добавьте `--check`.
 Общий `./run.sh` также сохранён — он выбирает установленный движок автоматически.
+**Для разработчиков:** http://localhost:8092/dev — состояние сервисов и воркеров, очереди, ошибки,
+агенты и их трассы, свежесть новостей (нужен `ADMIN_TOKEN` из `.env`). Prometheus:
+`curl -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8092/api/admin/metrics/prometheus`.
+Логи: `podman compose logs -f parser profiler-worker insight-worker` (строки `job_finished … duration_ms=…`).
+
 Демо — общий тестовый аккаунт; не выставляйте его с реальными данными в интернет.
 Остановка без потери данных: `podman compose down` (или `docker compose down`), **без `-v`**.

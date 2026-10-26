@@ -2,11 +2,12 @@ import logging
 import multiprocessing as mp
 import os
 import signal
+import socket
 import time
 from datetime import timedelta
 from uuid import uuid4
 
-from agent_common.core import db, execute, j, now, settings
+from agent_common.core import ServiceBusy, db, execute, j, now, settings
 
 log = logging.getLogger("backend_service.worker")
 KINDS = {
@@ -30,7 +31,7 @@ def claim(kinds):
             "WITH candidate AS (SELECT job_id FROM jobs WHERE kind=ANY(%s) AND attempts<max_attempts "
             "AND ((status='pending' AND available_at<=now()) OR (status='running' AND lease_until<now())) "
             "ORDER BY available_at FOR UPDATE SKIP LOCKED LIMIT 1) "
-            "UPDATE jobs SET status='running',attempts=attempts+1,lease_token=%s,"
+            "UPDATE jobs SET status='running',attempts=attempts+1,lease_token=%s,started_at=now(),"
             "lease_until=now()+interval '2 minutes' FROM candidate c WHERE jobs.job_id=c.job_id RETURNING jobs.*",
             (kinds, token),
         ).fetchone()
@@ -75,6 +76,11 @@ def handle(kind, payload):
     raise ValueError("Unknown job kind")
 
 
+def wall_time_seconds():
+    # Slow local LLMs need long agent budgets; the job limit must not cut a run that is within budget.
+    return max(1200, settings.agent_timeout_seconds + 300)
+
+
 def child(kind, payload, pipe):
     # CPU/memory and wall-time limits constrain hostile documents. Deployment is non-root.
     try:
@@ -83,6 +89,8 @@ def child(kind, payload, pipe):
         resource.setrlimit(resource.RLIMIT_AS, (3 * 1024**3, 3 * 1024**3))
         resource.setrlimit(resource.RLIMIT_CPU, (900, 900))
         pipe.send({"ok": True, "result": handle(kind, payload)})
+    except ServiceBusy as exc:
+        pipe.send({"ok": False, "busy": True, "error": f"ServiceBusy: {exc}"[:2000]})
     except Exception as exc:
         log.exception("Job failed: %s", kind)
         pipe.send({"ok": False, "error": f"{type(exc).__name__}: {exc}"[:2000]})
@@ -115,6 +123,22 @@ def finish(job, outcome):
                         "ON CONFLICT DO NOTHING",
                         ("embed-next:" + str(job["job_id"]), j({})),
                     )
+        elif outcome.get("busy"):
+            # Saturated dependency: wait in the queue, do not burn one of the limited attempts.
+            conn.execute(
+                "UPDATE jobs SET status='pending',attempts=greatest(attempts-1,0),last_error=%s,"
+                "available_at=now()+interval '20 seconds',lease_until=NULL "
+                "WHERE job_id=%s AND lease_token=%s AND status='running' AND created_at>now()-interval '2 hours'",
+                (outcome["error"], job["job_id"], job["lease_token"]),
+            )
+            if not conn.execute(
+                "SELECT 1 FROM jobs WHERE job_id=%s AND status='pending'", (job["job_id"],)
+            ).fetchone():
+                conn.execute(
+                    "UPDATE jobs SET status='failed',last_error=%s,finished_at=now(),lease_until=NULL "
+                    "WHERE job_id=%s AND lease_token=%s AND status='running'",
+                    (outcome["error"] + " (waited over 2 hours)", job["job_id"], job["lease_token"]),
+                )
         else:
             conn.execute(
                 "UPDATE jobs SET status=CASE WHEN attempts>=max_attempts THEN 'failed' ELSE 'pending' END,"
@@ -139,7 +163,8 @@ def maintenance():
         "EXISTS(SELECT 1 FROM company_profiles p WHERE p.payload->>'agent_run_id'=a.agent_run_id::text AND p.status='ready') OR "
         "EXISTS(SELECT 1 FROM discussion_messages m WHERE m.agent_run_id=a.agent_run_id) "
         "THEN 'completed' ELSE 'failed' END,finished_at=now() "
-        "WHERE a.status='running' AND a.started_at<now()-interval '25 minutes'"
+        "WHERE a.status='running' AND a.started_at<now()-make_interval(secs=>%s)",
+        (wall_time_seconds() + 300,),
     )
     bucket = int(time.time() // 60)
     for kind in ("bank_poll", "news_index", "chunk_embed"):
@@ -155,6 +180,47 @@ def maintenance():
                     "ON CONFLICT DO NOTHING",
                     (kind, f"{kind}:{bucket}", j({})),
                 )
+
+
+def heartbeat(worker_id, role, kinds, started_at, jobs, counters):
+    current = [
+        {"job_id": str(job["job_id"]), "kind": job["kind"], "since": str(job.get("started_at") or "")}
+        for job in jobs
+    ]
+    try:
+        execute(
+            "INSERT INTO worker_heartbeats(worker_id,role,kinds,host,pid,started_at,last_seen,running_jobs,processed,failed) "
+            "VALUES(%s,%s,%s,%s,%s,%s,now(),%s,%s,%s) ON CONFLICT(worker_id) DO UPDATE SET last_seen=now(),"
+            "running_jobs=EXCLUDED.running_jobs,processed=EXCLUDED.processed,failed=EXCLUDED.failed",
+            (
+                worker_id,
+                role,
+                kinds,
+                socket.gethostname(),
+                os.getpid(),
+                started_at,
+                j(current),
+                counters["processed"],
+                counters["failed"],
+            ),
+        )
+    except Exception as exc:  # observability must never stop job processing
+        log.warning("heartbeat failed: %s", exc)
+
+
+def finish_logged(job, outcome, started, counters):
+    finish(job, outcome)
+    counters["processed"] += 1
+    counters["failed"] += 0 if outcome["ok"] else 1
+    log.info(
+        "job_finished kind=%s job_id=%s ok=%s attempt=%s duration_ms=%d%s",
+        job["kind"],
+        job["job_id"],
+        outcome["ok"],
+        job["attempts"],
+        (time.monotonic() - started) * 1000,
+        "" if outcome["ok"] else " error=" + outcome["error"][:300].replace("\n", " "),
+    )
 
 
 def release_on_shutdown(job):
@@ -183,7 +249,16 @@ def main():
     signal.signal(signal.SIGINT, stop)
     last_maintenance = 0
     concurrency = int(os.getenv("WORKER_CONCURRENCY", "2"))
+    worker_id = f"{role}:{socket.gethostname()}:{os.getpid()}"
+    worker_started = now()
+    counters = {"processed": 0, "failed": 0}
+    try:
+        # Containers get new hostnames on every rebuild; forget workers silent for over an hour.
+        execute("DELETE FROM worker_heartbeats WHERE last_seen<now()-interval '1 hour'")
+    except Exception as exc:
+        log.warning("heartbeat cleanup failed: %s", exc)
     while not stopping:
+        heartbeat(worker_id, role, kinds, worker_started, [item[2] for item in running], counters)
         try:
             if role == "backend" and time.monotonic() - last_maintenance > 30:
                 maintenance()
@@ -198,14 +273,19 @@ def main():
                     process.join(timeout=2)
                     if process.is_alive():
                         process.terminate()
-                    finish(job, outcome)
+                    finish_logged(job, outcome, started, counters)
                     pipe.close()
                     running.remove(item)
-                elif not process.is_alive() or time.monotonic() - started > 1200:
+                elif not process.is_alive() or time.monotonic() - started > wall_time_seconds():
                     if process.is_alive():
                         process.kill()
                     process.join()
-                    finish(job, {"ok": False, "error": "Worker subprocess died or exceeded wall-time limit"})
+                    finish_logged(
+                        job,
+                        {"ok": False, "error": "Worker subprocess died or exceeded wall-time limit"},
+                        started,
+                        counters,
+                    )
                     pipe.close()
                     running.remove(item)
                 else:
@@ -245,6 +325,10 @@ def main():
         pipe.close()
         # Release on graceful shutdown; ungraceful exit is recovered by the lease.
         release_on_shutdown(job)
+    try:
+        execute("DELETE FROM worker_heartbeats WHERE worker_id=%s", (worker_id,))
+    except Exception as exc:
+        log.warning("heartbeat removal failed: %s", exc)
 
 
 if __name__ == "__main__":

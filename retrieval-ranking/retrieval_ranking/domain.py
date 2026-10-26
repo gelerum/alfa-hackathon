@@ -31,6 +31,7 @@ class Preferences:
     interest_markets: list[str] = field(default_factory=list)
     watchlist: list[str] = field(default_factory=list)
     goals: list[Goal] = field(default_factory=list)
+    kpis: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

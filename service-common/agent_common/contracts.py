@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StrictModel(BaseModel):
@@ -17,7 +17,23 @@ class Answers(StrictModel):
     goals: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(
         default_factory=list, max_length=3
     )
+    kpis: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(
+        default_factory=list, max_length=3
+    )
     note: str = Field(default="", max_length=1000)
+
+    @field_validator("kpis")
+    @classmethod
+    def normalize_kpis(cls, values):
+        result, seen = [], set()
+        for value in values:
+            value = value.strip()
+            if not value:
+                raise ValueError("KPI must not be blank")
+            if value.casefold() not in seen:
+                result.append(value)
+                seen.add(value.casefold())
+        return result
 
 
 class AgentScope(StrictModel):
@@ -96,6 +112,17 @@ class FacetDraft(StrictModel):
     keywords: list[str] = Field(default_factory=list, max_length=20)
 
 
+class ProfileFocusDraft(StrictModel):
+    """What the LLM writes: interpretation only. Bank facts are extracted deterministically."""
+
+    summary: str = Field(min_length=1, max_length=1500)
+    facets: list[FacetDraft] = Field(min_length=1, max_length=8)
+    document_facts: list[FactDraft] = Field(default_factory=list, max_length=12)
+    missing_data: list[str] = Field(default_factory=list, max_length=15)
+    conflicts: list[str] = Field(default_factory=list, max_length=10)
+    clarification: str | None = Field(default=None, max_length=500)
+
+
 class ProfileDraft(StrictModel):
     summary: str = Field(min_length=1, max_length=4000)
     facts: list[FactDraft] = Field(min_length=1, max_length=60)
@@ -107,10 +134,36 @@ class ProfileDraft(StrictModel):
 
 class ClaimDraft(StrictModel):
     kind: Literal["verified_fact", "bank_position", "ai_inference", "risk", "opportunity", "recommendation"]
-    statement: str = Field(min_length=1, max_length=3000)
+    # Empty statement is allowed only with an S-ref: the system copies the exact quote.
+    statement: str = Field(default="", max_length=3000)
     certainty: Literal["confirmed", "qualified", "unverified"] = "qualified"
     source_ids: list[UUID] = Field(default_factory=list, max_length=12)
     fact_ids: list[UUID] = Field(default_factory=list, max_length=12)
+    refs: list[str] = Field(default_factory=list, max_length=12)
+
+    @model_validator(mode="before")
+    @classmethod
+    def move_short_refs(cls, data):
+        # Models often put "S1"/"F3" into source_ids/fact_ids; treat them as refs instead of failing.
+        if isinstance(data, dict):
+            refs = list(data.get("refs") or [])
+            for key in ("source_ids", "fact_ids"):
+                kept = []
+                for value in data.get(key) or []:
+                    try:
+                        UUID(str(value))
+                        kept.append(value)
+                    except ValueError:
+                        refs.append(str(value))
+                data = {**data, key: kept}
+            data["refs"] = list(dict.fromkeys(refs))
+        return data
+
+    @model_validator(mode="after")
+    def statement_or_refs(self):
+        if not self.statement.strip() and not self.refs:
+            raise ValueError("Claim needs a statement or evidence refs")
+        return self
 
 
 class CardDraft(StrictModel):
@@ -129,6 +182,33 @@ class InsightDraft(StrictModel):
     cards: list[CardDraft] = Field(default_factory=list, max_length=10)
     limitations: list[str] = Field(default_factory=list, max_length=30)
     changes: list[str] = Field(default_factory=list, max_length=20)
+
+
+class EvidenceClaimDraft(StrictModel):
+    @model_validator(mode="before")
+    @classmethod
+    def legacy_ids(cls, data):
+        if isinstance(data, dict):
+            data = dict(data)
+            data["refs"] = (
+                list(data.get("refs") or [])
+                + list(data.pop("source_ids", []) or [])
+                + list(data.pop("fact_ids", []) or [])
+            )
+        return data
+
+    kind: Literal["verified_fact", "bank_position", "ai_inference", "risk", "opportunity", "recommendation"]
+    statement: str = Field(default="", max_length=1500)
+    certainty: Literal["confirmed", "qualified", "unverified"] = "qualified"
+    refs: list[str] = Field(min_length=1, max_length=12)
+
+
+class EvidenceCardDraft(CardDraft):
+    claims: list[EvidenceClaimDraft] = Field(min_length=2, max_length=12)
+
+
+class EvidenceInsightDraft(InsightDraft):
+    cards: list[EvidenceCardDraft] = Field(default_factory=list, max_length=4)
 
 
 class QuestionDraft(StrictModel):

@@ -121,7 +121,14 @@ def draft_insight(runtime, messages):
                     {
                         "kind": "ai_inference",
                         "statement": "Следует проверить сценарии бюджета.",
-                        "source_ids": [str(source["source_id"])],
+                        "source_ids": [str(source["source_id"])]
+                        + [
+                            str(s["source_id"])
+                            for s in all_rows(
+                                "SELECT * FROM evidence_sources WHERE source_id=ANY(%s::uuid[]) AND source_type='bank_analytics'",
+                                (list(runtime.sources),),
+                            )[:1]
+                        ],
                         "fact_ids": [next(iter(runtime.fact_ids))],
                     },
                 ],
@@ -132,6 +139,22 @@ def draft_insight(runtime, messages):
 
 def test_real_rank_sql_http_callback_report_and_question(demo, fake_embeddings, bridge, monkeypatch):
     report, request = prepare(demo, fake_embeddings, monkeypatch)
+    from backend_service.documents import embed_chunks_batch, index_chunks
+
+    bank_doc = one(
+        "INSERT INTO documents(source_type,title,processing_status,published_at) "
+        "VALUES('bank_analytics','Условия кредитования','ready',%s) RETURNING document_id",
+        (report["window_end"] - timedelta(days=2),),
+    )["document_id"]
+    index_chunks(
+        sections=[("Условия кредитования зависят от срока и типа ставки по договору.", {"page": 1})],
+        title="Условия кредитования",
+        kind="bank_analytics",
+        company_id=None,
+        document_id=bank_doc,
+        published_at=report["window_end"] - timedelta(days=2),
+    )
+    embed_chunks_batch()
     assert dispatch_ranking({"request_id": request["request_id"]})["status"] == "sent"
     run = one("SELECT * FROM ranking_runs")
     assert run["status"] == "completed"

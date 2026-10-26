@@ -34,6 +34,7 @@ const context = vm.createContext({
     } else if (url.endsWith('/reports')) data = [];
     else if (url.endsWith('/context')) data = { status: 'ready' };
     else if (url.endsWith('/documents')) data = [];
+    else if (url.endsWith('/pipeline')) data = { stages: [], busy: false, profile: null, user_context: null };
     else if (url === '/api/accepted') { data = { job_id: 'test-job' }; status = 202; }
     else if (url === '/api/upload') data = { document_id: 'test-document' };
     else throw new Error('Unexpected URL: ' + url);

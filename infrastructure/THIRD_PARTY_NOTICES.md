@@ -48,8 +48,9 @@ Python versions are pinned in `uv.lock`; existing Parser/Embedding services reta
 
 1. `bank-materials-source` is a simulated publication API, seeded from case PDFs. It is not an
    official Alfa-Bank endpoint. New materials can be published live to the simulation.
-2. `/admin/demo` creates a fictional company/user and explicitly associates it with a synthetic
-   bank record. This is not real identity resolution or production SSO.
+2. `/admin/demo` and the automatic demo session associate fictional company names (five showcase
+   synthetic rows with revenue above 15 bn, see `DEMO_COMPANIES`) with synthetic bank records and
+   prefill editable example onboarding answers. This is not real identity resolution or production SSO.
 3. `retrieval-ranking` is included in this monorepo. Backend calls synchronous `/rank`, stores
    the ranking run ID and submits that ID to Insight Agent `/runs`. Internal ranker has no
    public authentication endpoint and is not published on a host port.

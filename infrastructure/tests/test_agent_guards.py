@@ -6,8 +6,8 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
-from agent_common.contracts import FetchArgs, ProfileDraft, ReadArgs
-from agent_common.core import execute, j, settings
+from agent_common.contracts import FacetDraft, FetchArgs, ProfileDraft, ReadArgs
+from agent_common.core import all_rows, execute, j, settings
 from agent_common.runtime import Runtime
 from insight_service import service as insights
 from profiler_service import service as profiler
@@ -120,10 +120,27 @@ def test_new_auxiliary_revision_is_rejected_but_pinned_old_primary_is_readable(d
 
 def test_real_bank_quote_cannot_support_invented_debt_balance(demo, fake_embeddings):
     runtime = Runtime("company_profiler", **demo)
-    runtime.tool("company_bank_data.get", {})
-    draft = ProfileDraft.model_validate(fake_profile_llm(runtime, [{"content": ""}])["result"])
+    facts = profiler.bank_facts(runtime.tool("company_bank_data.get", {}))
+    facet = FacetDraft(facet_type="activity", text="Оборудование", fact_indexes=[0])
+    draft = ProfileDraft(summary="Оборудование", facts=facts, facets=[facet])
     profiler.validate_profile(draft, runtime)
     draft.facts[0].field = "debt_balance"
     draft.facts[0].value = "999999999"
     with pytest.raises(ValueError, match="extractive"):
         profiler.validate_profile(draft, runtime)
+
+
+def test_bare_result_without_action_envelope_is_accepted(demo, fake_embeddings, monkeypatch):
+    from test_integration import fake_profile_llm as envelope
+
+    def bare(self, messages):
+        reply = envelope(self, messages)
+        return reply.get("result", reply)
+
+    monkeypatch.setattr(Runtime, "complete_json", bare)
+    result = profiler.profile_job(demo)
+    steps = all_rows(
+        "SELECT s.step_kind,s.status FROM agent_steps s JOIN agent_runs a USING(agent_run_id) "
+        "WHERE a.agent_name='company_profiler' ORDER BY step_no"
+    )
+    assert result["profile_id"] and not [s for s in steps if s["status"] == "error"]

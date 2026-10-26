@@ -14,6 +14,7 @@ def render_context(context: CompanyContext) -> str:
     preferences = context.preferences
     if preferences is not None:
         lines.append("\nUser priorities:")
+        _add_list(lines, "User-declared KPIs (priorities, not achieved outcomes)", preferences.kpis)
         _add_optional(lines, "Business role", preferences.business_role)
         _add_optional(lines, "Responsibility", preferences.responsibility)
         _add_list(lines, "Focus topics", preferences.focus_topics)

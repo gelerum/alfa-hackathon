@@ -64,6 +64,13 @@ def browser_page(frontend_url):
                     "profile": {"profile_version": 2},
                     "user_context": {"business_role": "Казначей", "raw_answers": {"role": "Казначей"}},
                 }
+            elif path.endswith("/pipeline"):
+                data = {
+                    "stages": [{"key": "focus", "title": "Ваш фокус", "state": "done", "detail": "Сохранён"}],
+                    "busy": False,
+                    "profile": None,
+                    "user_context": None,
+                }
             elif path.endswith("/documents"):
                 data = [] if request.method == "GET" else {"document_id": "document", "job_id": "extract"}
                 if request.method == "POST":
