@@ -26,10 +26,10 @@
 <main class="main">
   <div id="notice" role="status" aria-live="polite" hidden></div>
   <section id="loginScreen" class="screen active">
-    <div class="panel narrow"><span class="eyebrow">Альфа-Бизнес</span><h1>Подключаем бизнес-обзор</h1>
-      <p>В демо вход выполняется автоматически. При отключённом демо-режиме используйте выданный пользовательский токен.</p>
-      <form id="loginForm"><label>Токен доступа<input id="tokenInput" type="password" autocomplete="off" required></label><button class="primary">Войти</button></form>
-      <p id="loginError" class="error" role="alert"></p>
+    <div class="panel narrow"><span class="eyebrow">Альфа-Бизнес</span><h1 id="loginTitle">Подключаем бизнес-обзор</h1>
+      <p id="loginHint">Открываем тестовый стенд. Вход выполняется автоматически.</p>
+      <form id="loginForm" hidden><label>Токен доступа<input id="tokenInput" type="password" autocomplete="off" required></label><button class="primary">Войти</button></form>
+      <p id="loginError" class="error" role="alert"></p><button id="retryConnectionBtn" type="button" class="primary" hidden>Повторить подключение</button>
     </div>
   </section>
   <section id="dashboardScreen" class="screen">
@@ -48,19 +48,19 @@
     <section id="pipelinePanel" class="panel pipeline" aria-live="polite" hidden><div class="pipeline-head"><h3>Что сейчас происходит</h3><small id="pipelineUpdated"></small></div><ol id="pipelineStages"></ol></section>
     <section id="fixedProfile" class="fixed-profile" hidden></section>
     <div id="reportsList" class="reports-grid"></div>
-    <div id="emptyState" class="panel empty" hidden><h3>Здесь появится ваш первый обзор</h3><p>Настройте фокус и нажмите «Подготовить обзор». Для анализа нужны работающие workers, LLM и внешний ranker. Мы не подменяем их заранее написанными выводами.</p></div>
+    <div id="emptyState" class="panel empty" hidden><h3>Здесь появится ваш первый обзор</h3><p>Настройте фокус и нажмите «Подготовить обзор». Мы подберём события по деятельности компании и вашим задачам, проверим источники и объясним возможное влияние.</p></div>
   </section>
   <section id="reportScreen" class="screen">
     <button id="backToDash" class="quiet">← Сводка</button>
     <div class="section-heading"><div><span class="eyebrow">Персональный бизнес-обзор</span><h1 id="reportTitle">Важное за неделю</h1><p id="reportMeta"></p></div><label>Версия<select id="versionSelect" aria-label="Версия отчёта"></select></label></div>
-    <div id="reportCard" class="panel" hidden></div><div id="reportBody"></div>
+    <div id="reportCard" class="panel" hidden></div><div id="reportBody"></div><div id="reportDiscussions"></div>
   </section>
   <section id="onboardingScreen" class="screen">
     <button id="backFromOnboarding" class="quiet">← Сводка</button>
     <div class="section-heading"><div><span class="eyebrow">Персонализация</span><h1>Мой фокус и документы</h1><p>Роль, цели и KPI относятся к вам в выбранной компании, документы — к контексту компании.</p><p id="obPrefillHint" class="muted" hidden>Поля заполнены примером для демо-компании — проверьте, отредактируйте и сохраните.</p></div></div>
     <form id="onboardingForm" class="panel form-panel">
       <label>Ваша роль<input id="obRole" placeholder="Например, руководитель казначейства" maxlength="200" required></label>
-      <label>За что отвечаете <small>До 8 направлений, каждое с новой строки</small><textarea id="obResponsibilities" rows="3" placeholder="Ликвидность\nВалютные риски" maxlength="1600"></textarea></label>
+      <label>За что отвечаете <small>До 8 направлений, каждое с новой строки</small><textarea id="obResponsibilities" rows="3" placeholder="Ликвидность&#10;Валютные риски" maxlength="1600"></textarea></label>
       <label>Цели <small>До 3 целей, каждая с новой строки</small><textarea id="obGoals" rows="3" placeholder="Снизить стоимость финансирования" maxlength="1500"></textarea></label>
       <label>Какие показатели важно улучшить или удержать <small>До 3 KPI, каждый с новой строки</small><textarea id="obKpis" rows="3" placeholder="Стоимость заёмного финансирования, % годовых" maxlength="620"></textarea></label>
       <label>Дополнительный фокус<textarea id="obNote" rows="2" maxlength="1000" placeholder="Какие решения вам предстоит принять?"></textarea></label>
@@ -69,6 +69,7 @@
     </form>
     <div class="panel"><h3>Загруженные документы</h3><div id="documentsList"></div></div>
   </section>
+<footer class="service-disclaimer">Материалы помогают оценить события и требуют проверки с учётом ситуации компании. Не является инвестиционной рекомендацией.</footer>
 </main>
 <script src="/frontend/app.js"></script>
 </body>

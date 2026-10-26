@@ -23,7 +23,7 @@ const storage = new Map([['alpha_admin_token', 'admin']]);
 const sandbox = vm.createContext({
   document: {querySelector: $}, console, URLSearchParams, Date, Math, Number, String, JSON,
   setTimeout() { return 1; }, clearTimeout() {},
-  localStorage: {getItem: k => storage.get(k), setItem: (k, v) => storage.set(k, v)},
+  sessionStorage: {getItem: k => storage.get(k), setItem: (k, v) => storage.set(k, v)},
   async fetch(url, options) {
     calls.push({url, options});
     let data;

@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from agent_common.core import encode as jsonable_encoder
 
+from agent_common.bank_semantics import BANK_INTERPRETATION_VERSION
 from agent_common.contracts import FactDraft, ProfileDraft, ProfileFocusDraft
 from agent_common.core import db, digest, j, membership, one
 from agent_common.embeddings import config, query_embedding
@@ -59,6 +60,8 @@ BANK_FACT_FIELDS = (
     "registration_city",
     "registration_region",
     "revenue_value",
+    "currency",
+    "revenue_year",
     "employees_fns_band",
     "company_age_band",
     "eco_mark_label",
@@ -127,6 +130,7 @@ def _facts_prompt(facts):
 
 def company_inputs(conn, company_id):
     return {
+        "bank_interpretation_version": BANK_INTERPRETATION_VERSION,
         "bank": conn.execute(
             "SELECT b.bank_record_id,b.source_snapshot_id,s.source_as_of,s.currency,s.revenue_year "
             "FROM bank_company_data b JOIN bank_import_batches s USING(source_snapshot_id) "

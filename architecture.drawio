@@ -1,0 +1,100 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" version="26.0.0">
+  <diagram name="Система" id="system">
+    <mxGraphModel dx="1560" dy="1020" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1560" pageHeight="1020">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="Как работает бизнес-обзор" style="text;html=0;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=34;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="35" width="1440" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Схема данных: от контекста компании и источников к проверяемому выводу." style="text;html=0;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="87" width="1440" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="company" value="Контекст компании&#10;&#10;CSV банка, роль и цели,&#10;загруженные документы" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#ffffff;strokeColor=#d7dbe1;fontColor=#20242b;fontSize=19;spacing=16;align=left;" vertex="1" parent="1">
+          <mxGeometry x="60" y="160" width="300" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="profiler" value="Company Profiler&#10;&#10;Выделяет факты с цитатами,&#10;сохраняет личный фокус" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#ffffff;strokeColor=#d7dbe1;fontColor=#20242b;fontSize=19;spacing=16;align=left;" vertex="1" parent="1">
+          <mxGeometry x="430" y="160" width="300" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="profile" value="Версии контекста&#10;&#10;Профиль компании и&#10;предпочтения пользователя" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#ffffff;strokeColor=#d7dbe1;fontColor=#20242b;fontSize=19;spacing=16;align=left;" vertex="1" parent="1">
+          <mxGeometry x="800" y="160" width="300" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="ui" value="Frontend + Backend&#10;&#10;Выбор компании, обзор,&#10;вопросы и прогресс задач" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#fff0ed;strokeColor=#ef3124;fontColor=#20242b;fontSize=19;spacing=16;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="160" width="300" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="news" value="Внешние новости&#10;&#10;RSS, Telegram, сайты&#10;и открытые публикации" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#ffffff;strokeColor=#d7dbe1;fontColor=#20242b;fontSize=19;spacing=16;align=left;" vertex="1" parent="1">
+          <mxGeometry x="60" y="370" width="300" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="parser" value="Parser + Embeddings&#10;&#10;Текст, даты, дубли, версии;&#10;Qwen создаёт векторы" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#ffffff;strokeColor=#d7dbe1;fontColor=#20242b;fontSize=19;spacing=16;align=left;" vertex="1" parent="1">
+          <mxGeometry x="430" y="370" width="300" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="db" value="PostgreSQL + pgvector&#10;&#10;Данные, версии, векторы,&#10;очередь задач и журнал" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#edf3ff;strokeColor=#6c8fc4;fontColor=#20242b;fontSize=19;spacing=16;align=left;" vertex="1" parent="1">
+          <mxGeometry x="800" y="370" width="300" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="ranking" value="Retrieval + Reranker&#10;&#10;Векторный и текстовый поиск;&#10;Qwen сортирует кандидатов" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#ffffff;strokeColor=#d7dbe1;fontColor=#20242b;fontSize=19;spacing=16;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="370" width="300" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="bank" value="Аналитика банка&#10;&#10;PDF из задания; публикации&#10;через модельный API" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#ffffff;strokeColor=#d7dbe1;fontColor=#20242b;fontSize=19;spacing=16;align=left;" vertex="1" parent="1">
+          <mxGeometry x="60" y="580" width="300" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="documents" value="Документы + OCR&#10;&#10;PDF, DOCX, XLSX, картинки;&#10;фрагменты с источниками" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#ffffff;strokeColor=#d7dbe1;fontColor=#20242b;fontSize=19;spacing=16;align=left;" vertex="1" parent="1">
+          <mxGeometry x="430" y="580" width="300" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="gateway" value="Tool Gateway / RAG&#10;&#10;Контекст, новости, документы,&#10;контролируемый web-поиск" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#ffffff;strokeColor=#d7dbe1;fontColor=#20242b;fontSize=19;spacing=16;align=left;" vertex="1" parent="1">
+          <mxGeometry x="800" y="580" width="300" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="insight" value="Insight Agent&#10;&#10;План, поиск, самопроверка;&#10;выводы с фактами и ссылками" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#fff0ed;strokeColor=#ef3124;fontColor=#20242b;fontSize=19;spacing=16;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="580" width="300" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;strokeColor=#777f8c;fontSize=16;labelBackgroundColor=#f4f5f7;" edge="1" parent="1" source="company" target="profiler">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;strokeColor=#777f8c;fontSize=16;labelBackgroundColor=#f4f5f7;" edge="1" parent="1" source="profiler" target="profile">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;strokeColor=#777f8c;fontSize=16;labelBackgroundColor=#f4f5f7;" edge="1" parent="1" source="profile" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;strokeColor=#777f8c;fontSize=16;labelBackgroundColor=#f4f5f7;" edge="1" parent="1" source="news" target="parser">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;strokeColor=#777f8c;fontSize=16;labelBackgroundColor=#f4f5f7;" edge="1" parent="1" source="parser" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;strokeColor=#777f8c;fontSize=16;labelBackgroundColor=#f4f5f7;" edge="1" parent="1" source="db" target="ranking">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;strokeColor=#777f8c;fontSize=16;labelBackgroundColor=#f4f5f7;" edge="1" parent="1" source="ranking" target="insight">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;strokeColor=#777f8c;fontSize=16;labelBackgroundColor=#f4f5f7;" edge="1" parent="1" source="bank" target="documents">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a9" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;strokeColor=#777f8c;fontSize=16;labelBackgroundColor=#f4f5f7;" edge="1" parent="1" source="documents" target="gateway">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;strokeColor=#777f8c;fontSize=16;labelBackgroundColor=#f4f5f7;" edge="1" parent="1" source="db" target="gateway">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;strokeColor=#777f8c;fontSize=16;labelBackgroundColor=#f4f5f7;" edge="1" parent="1" source="gateway" target="insight">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;strokeColor=#777f8c;fontSize=16;labelBackgroundColor=#f4f5f7;" edge="1" parent="1" source="insight" target="ui">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1510" y="642" />
+              <mxPoint x="1510" y="222" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="jobs" value="Backend ставит задачи в PostgreSQL; workers выполняют их с повторами и показывают прогресс.&#10;Агенты обращаются к общей генеративной LLM: внешний endpoint или контейнер Qwen3.6-35B-A3B." style="text;html=0;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=21;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="760" width="1420" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="guards" value="Проверки: права на компанию · разрешённые инструменты · цитаты и версии · лимиты шагов и токенов.&#10;Факт, позиция Альфа-Банка и условный вывод AI различаются. Неизвестные данные остаются неизвестными.&#10;Стрелки показывают основной поток данных; служебные HTTP-вызовы и повторы опущены." style="text;html=0;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=19;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="865" width="1420" height="100" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

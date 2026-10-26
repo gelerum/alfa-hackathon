@@ -3,7 +3,7 @@ const $ = selector => document.querySelector(selector);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let token = '';
 let timer = null;
-try { token = localStorage.getItem('alpha_admin_token') || ''; } catch (_) {}
+try { token = sessionStorage.getItem('alpha_admin_token') || ''; } catch (_) {}
 
 async function admin(path) {
   const response = await fetch('/api/admin/' + path, {headers: {Authorization: 'Bearer ' + token}});
@@ -72,7 +72,41 @@ function render(snapshot) {
   $('#updated').textContent = 'обновлено ' + new Date().toLocaleTimeString('ru-RU');
 }
 
+
+function accessMode(isAdmin) {
+  for (const id of ['failureSection', 'agentSection', 'runSection', 'toolSection', 'dataSection', 'prometheusSection']) {
+    $('#' + id).hidden = !isAdmin;
+  }
+  $('#accessMode').textContent = isAdmin
+    ? 'Режим администратора: подробная диагностика и трассы агентов.'
+    : 'Общий обзор тестового стенда. Данные компаний и содержимое запросов здесь не раскрываются.';
+}
+function renderPublic(snapshot) {
+  const names = {'postgres': 'База данных', 'tool-gateway': 'Поиск и инструменты', 'embeddings': 'Поиск по смыслу',
+    'retrieval-ranking': 'Отбор новостей', 'bank-materials-source': 'Аналитика банка', 'searxng': 'Поиск в интернете', 'llm': 'ИИ-аналитик'};
+  const statuses = {'ok': 'Работает', 'down': 'Недоступен', 'error': 'Ошибка', 'not_configured': 'Не настроен', 'configured': 'Настроен; готовность проверяется при запросе'};
+  const roles = {'backend': 'Планировщик', 'documents': 'Документы', 'profiler': 'Профили компаний', 'insight': 'Инсайты и ответы'};
+  const kinds = {'profile': 'Обновление профиля', 'question': 'Ответ на вопрос', 'document': 'Обработка документа',
+    'ranking': 'Отбор новостей', 'insight': 'Подготовка инсайтов'};
+  $('#services').innerHTML = snapshot.services.map(s => `<div class="badge ${esc(s.status)}"><b>${esc(names[s.name] || s.name)}</b>
+    <small>${esc(statuses[s.status] || s.status)}${s.latency_ms !== undefined ? ' · ' + esc(s.latency_ms) + ' мс' : ''}</small></div>`).join('');
+  const missing = snapshot.workers.filter(w => !w.alive);
+  $('#missingWorkers').hidden = !missing.length;
+  $('#missingWorkers').textContent = 'Ожидаем подключения: ' + missing.map(w => roles[w.role] || w.role).join(', ') + '.';
+  $('#workers').innerHTML = table(snapshot.workers, [
+    ['Назначение', 'role', v => esc(roles[v] || v)], ['Состояние', 'alive', v => v ? 'Работает' : 'Нет сигнала'],
+    ['В работе', 'running'], ['Готово', 'processed'], ['Ошибок', 'failed'],
+  ]);
+  $('#queues').innerHTML = table(snapshot.queues, [
+    ['Задача', 'kind', v => esc(kinds[v] || v)], ['Ожидают', 'ready'], ['В работе', 'running'],
+    ['Повторная попытка', 'retry_scheduled'], ['Готово за час', 'completed_1h'], ['Ошибок за сутки', 'failed_24h'],
+    ['Среднее время', 'avg_run_s', seconds],
+  ]);
+  $('#updated').textContent = 'обновлено ' + new Date().toLocaleTimeString('ru-RU');
+}
+
 async function loadRuns() {
+  if (!token) return;
   const params = new URLSearchParams({limit: '30'});
   for (const [key, id] of [['agent', '#runAgent'], ['status', '#runStatus'], ['company_id', '#runCompany']]) {
     if ($(id).value.trim()) params.set(key, $(id).value.trim());
@@ -84,6 +118,7 @@ async function loadRuns() {
   ], row => `class="clickable" data-run="${esc(row.agent_run_id)}"`);
 }
 async function showTrace(id) {
+  if (!token) return;
   const trace = await admin('agent-runs/' + encodeURIComponent(id));
   const run = trace.run;
   $('#trace').innerHTML = `<h3>Трасса ${esc(run.agent_name)} · ${esc(run.agent_run_id)} · ${state(run.status)}</h3>
@@ -100,10 +135,18 @@ async function showTrace(id) {
 
 async function refresh() {
   clearTimeout(timer);
-  if (!token) { $('#error').hidden = false; $('#error').textContent = 'Введите ADMIN_TOKEN (infrastructure/.env).'; return; }
+  accessMode(Boolean(token));
   try {
-    render(await admin('observability'));
-    await loadRuns();
+    if (token) {
+      render(await admin('observability'));
+      await loadRuns();
+    } else {
+      const response = await fetch('/api/dev/overview');
+      if (!response.ok) throw new Error(response.status === 404
+        ? 'Общий обзор доступен только на тестовом стенде. Для подробной диагностики откройте доступ администратора.'
+        : 'HTTP ' + response.status);
+      renderPublic(await response.json());
+    }
     $('#error').hidden = true;
   } catch (error) {
     $('#error').hidden = false; $('#error').textContent = 'Не удалось получить метрики: ' + error.message;
@@ -114,7 +157,12 @@ async function refresh() {
 $('#tokenInput').value = token;
 $('#tokenForm').addEventListener('submit', event => {
   event.preventDefault(); token = $('#tokenInput').value.trim();
-  try { localStorage.setItem('alpha_admin_token', token); } catch (_) {}
+  try { sessionStorage.setItem('alpha_admin_token', token); } catch (_) {}
+  refresh();
+});
+$('#publicMode').addEventListener('click', () => {
+  token = ''; $('#tokenInput').value = '';
+  try { sessionStorage.removeItem('alpha_admin_token'); } catch (_) {}
   refresh();
 });
 $('#autoRefresh').addEventListener('change', refresh);

@@ -18,6 +18,7 @@ const document = {
   createElement() { return element(); },
 };
 const calls = [];
+let demoFailure = null;
 const storage = new Map();
 const context = vm.createContext({
   document, FormData, console,
@@ -25,6 +26,7 @@ const context = vm.createContext({
   localStorage: { getItem(k) { return storage.get(k); }, setItem(k, v) { storage.set(k, v); } },
   async fetch(url, options) {
     calls.push({ url, options });
+    if (url === '/api/demo/session' && demoFailure) return {ok:false,status:demoFailure,json:async()=>({detail:'unavailable'})};
     let data;
     let status = 200;
     if (url === '/api/demo/session') data = { token: 'demo-token', display_name: 'Демо-пользователь' };
@@ -50,6 +52,8 @@ const context = vm.createContext({
   assert.equal(nodes.get('#generateBtn').disabled, false);
   assert.ok(!nodes.get('#notice')?.textContent);
   assert.equal(nodes.get('#logoutBtn').hidden, true);
+  assert.equal(nodes.get('#loginForm').hidden, true);
+  assert.equal(nodes.get('#retryConnectionBtn').hidden, true);
   assert.match(nodes.get('#userName').textContent, /Демо-пользователь/);
   assert.equal(calls[0].url, '/api/demo/session');
   assert.equal(calls[0].options.method, 'POST');
@@ -58,5 +62,18 @@ const context = vm.createContext({
   await vm.runInContext('api("/upload", {method:"POST", body:new FormData()})', context);
   assert.equal(calls.at(-1).options.headers['Content-Type'], undefined);
   assert.ok(calls.every(call => !call.url.includes('//')));
-  console.log('Automatic demo login, API paths, 202 JSON and multipart headers: OK');
+  demoFailure = 503;
+  await vm.runInContext('initialize()', context);
+  assert.equal(nodes.get('#loginForm').hidden, true);
+  assert.equal(nodes.get('#retryConnectionBtn').hidden, false);
+  assert.equal(nodes.get('#retryConnectionBtn').disabled, false);
+  demoFailure = 404;
+  await vm.runInContext('initialize()', context);
+  assert.equal(nodes.get('#loginForm').hidden, false);
+  assert.equal(nodes.get('#retryConnectionBtn').hidden, true);
+  demoFailure = null;
+  await vm.runInContext('initialize()', context);
+  assert.equal(nodes.get('#loginForm').hidden, true);
+  assert.equal(nodes.get('#retryConnectionBtn').hidden, true);
+  console.log('Automatic demo login without token flash, retry, manual fallback, API paths and multipart: OK');
 })().catch(error => { console.error(error); process.exitCode = 1; });

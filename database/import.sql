@@ -1,11 +1,13 @@
 -- Loaded once by the PostgreSQL Docker entrypoint, after schema.sql.
 -- Keep CSV strings unchanged in raw_attributes; normalize only typed columns.
--- Unknown currency, revenue year and aggregation period remain NULL.
+-- Company revenue: RUB, 2025; 1000 is a placeholder. Payment period remains unknown.
 BEGIN;
 
-INSERT INTO bank_import_batches (dataset, source_filename, sha256)
+INSERT INTO bank_import_batches (dataset, source_filename, sha256, currency, revenue_year)
 SELECT dataset, filename,
-       encode(sha256(pg_read_binary_file('/csv/' || filename)), 'hex')
+       encode(sha256(pg_read_binary_file('/csv/' || filename)), 'hex'),
+       CASE WHEN dataset IN ('company','payments') THEN 'RUB' END,
+       CASE WHEN dataset = 'company' THEN 2025 END
 FROM (VALUES
   ('company', 'df_Uid_data_hack.csv'),
   ('payments', 'df_Uid_payment_hack.csv'),
@@ -57,7 +59,7 @@ SELECT b.source_snapshot_id, c.source_row_number, btrim(c."SYNTHETIC_U"),
   nullif(btrim(c."CL_TYPE"), ''), nullif(btrim(c."GROUP_ID"), ''),
   nullif(btrim(c."CITY"), ''), nullif(btrim(c."REGION"), ''),
   nullif(btrim(c."REVENUE_COMPANY"), ''),
-  nullif(btrim(c."REVENUE_COMPANY"), '')::numeric,
+  nullif(nullif(btrim(c."REVENUE_COMPANY"), '')::numeric, 1000),
   nullif(btrim(c."FTS_FLAG"), '')::numeric::integer::boolean,
   nullif(btrim(c."FTS_COUNTRY_NAME"), ''),
   nullif(btrim(c."CL_PRODUCT_LOA_MARK"), '')::numeric::integer::boolean,
@@ -75,13 +77,14 @@ FROM '/csv/df_Uid_payment_hack.csv'
 WITH (FORMAT csv, HEADER MATCH, DELIMITER ';', NULL '\N', ENCODING 'UTF8');
 
 INSERT INTO bank_payment_edges (
-  source_snapshot_id, source_row_number, payer, beneficiary, pay_amt, pay_cnt,
+  source_snapshot_id, source_row_number, payer, beneficiary, pay_amt, pay_cnt, currency,
   raw_attributes
 )
 SELECT b.source_snapshot_id, c.source_row_number,
   btrim(c."PAYER"), btrim(c."BENEFICIARY"),
   nullif(btrim(c."PAY_AMT"), '')::numeric,
   nullif(btrim(c."PAY_CNT"), '')::bigint,
+  'RUB',
   to_jsonb(c) - 'source_row_number'
 FROM payment_csv c CROSS JOIN bank_import_batches b WHERE b.dataset = 'payments';
 

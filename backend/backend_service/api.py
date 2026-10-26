@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import Field
 
+from agent_common.bank_semantics import normalize_company_record
 from agent_common.contracts import Answers, StrictModel
 from agent_common.core import (
     admin,
@@ -90,6 +91,13 @@ def metrics():
     }
 
 
+@api_router.get("/dev/overview")
+def demo_overview():
+    if os.environ.get("DEMO_MODE", "false").lower() not in ("true", "1", "yes"):
+        raise HTTPException(404, "Demo diagnostics are disabled")
+    return observability.public_snapshot()
+
+
 @api_router.get("/admin/observability", dependencies=[Depends(admin)])
 def observability_snapshot():
     """Developer overview: dependency health, workers, queues, failures, agents, tools, data freshness."""
@@ -163,16 +171,18 @@ def demo_session():
 @api_router.get("/companies")
 def companies(user: UUID = Depends(current_user)):
     rows = all_rows(
-        "SELECT c.*,m.business_role,m.access_role,b.main_okved_name,b.registration_city,b.revenue_value "
+        "SELECT c.*,m.business_role,m.access_role,b.main_okved_name,b.registration_city,b.revenue_value, "
+        "b.revenue_raw,b.source_filename,b.currency,b.revenue_year "
         "FROM companies c JOIN company_memberships m USING(company_id) "
-        "LEFT JOIN LATERAL (SELECT d.main_okved_name,d.registration_city,d.revenue_value "
+        "LEFT JOIN LATERAL (SELECT d.main_okved_name,d.registration_city,d.revenue_value,d.revenue_raw, "
+        "s.source_filename,s.currency,s.revenue_year "
         "FROM bank_company_data d JOIN bank_import_batches s USING(source_snapshot_id) "
         "WHERE d.company_id=c.company_id AND s.status='ready' ORDER BY d.bank_record_id DESC LIMIT 1) b ON true "
         "WHERE m.user_id=%s AND m.is_active ORDER BY c.legal_name NULLS LAST,c.company_id",
         (user,),
     )
     # Editable onboarding prefill; nothing is stored until the user saves the form.
-    return [{**row, "suggested_answers": suggested_answers(row["company_id"])} for row in rows]
+    return [{**normalize_company_record(row), "suggested_answers": suggested_answers(row["company_id"])} for row in rows]
 
 
 @api_router.post("/companies/{company_id}/onboarding", status_code=202)
@@ -493,13 +503,25 @@ def ask(report_id: UUID, request: Question, user: UUID = Depends(current_user)):
 
 @api_router.get("/reports/{report_id}/discussions")
 def discussions(report_id: UUID, user: UUID = Depends(current_user)):
-    owned_report(report_id, user)
-    return all_rows(
-        "SELECT d.discussion_id,d.report_version_id,m.* FROM discussions d "
+    report = owned_report(report_id, user)
+    rows = all_rows(
+        "SELECT d.discussion_id,d.report_version_id,m.*,target.insight_id FROM discussions d "
         "JOIN report_versions v USING(report_version_id) JOIN discussion_messages m USING(discussion_id) "
-        "WHERE v.report_id=%s AND d.user_id=%s ORDER BY m.created_at",
+        "LEFT JOIN LATERAL (SELECT a.input_snapshot->'question'->>'insight_id' AS insight_id "
+        "FROM discussion_messages reply JOIN agent_runs a USING(agent_run_id) "
+        "WHERE reply.discussion_id=d.discussion_id AND reply.speaker='assistant' "
+        "AND a.user_id=d.user_id ORDER BY reply.created_at LIMIT 1) target ON true "
+        "WHERE v.report_id=%s AND d.user_id=%s ORDER BY d.created_at,m.created_at,"
+        "CASE m.speaker WHEN 'user' THEN 0 ELSE 1 END,m.message_id",
         (report_id, user),
     )
+    for message in rows:
+        message["source_details"] = all_rows(
+            "SELECT * FROM evidence_sources WHERE source_id::text=ANY(%s) "
+            "AND (company_id IS NULL OR company_id=%s) ORDER BY source_id",
+            ([str(source_id) for source_id in message["sources"]], report["company_id"]),
+        ) if message["sources"] else []
+    return rows
 
 
 @api_router.get("/jobs/{job_id}")

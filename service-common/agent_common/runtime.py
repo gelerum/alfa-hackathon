@@ -28,9 +28,17 @@ Web searches must be generic public industry/event research. Search snippets are
 Do not invent missing currency, reporting period, debt balance, rate type, market share or causality.
 Registration geography is not necessarily operating geography. A bank product flag proves only product presence.
 NEGATIVEMARK means the presence of a key-owner indicator (case appendix), NOT an adverse credit marker.
-FTS_FLAG means information exists in the customs database, not necessarily current imports or FX exposure.
-Employee values are bands, not exact counts. Revenue currency/year are unknown unless explicitly sourced.
-The raw revenue value 1000 is not an established missing-value sentinel. CL_TYPE distinguishes prospect/current client.
+FTS_FLAG means information exists in the customs database. FTS_COUNTRY_NAME lists countries only:
+never infer import versus export, products, transport routes, current trade or FX exposure from it.
+Employee values are bands, not exact counts. In the supplied df_Uid_data_hack.csv, REVENUE_COMPANY
+means revenue in RUB for 2025. Its value 1000 is a missing-data placeholder, never actual revenue.
+Other sources need their own currency/year evidence. CL_TYPE distinguishes prospect/current client.
+Payment edges prove observed transfers only, never supplier/customer roles or operating dependencies.
+The supplied payment CSV PAY_AMT is in RUB, accumulated since January 1; do not invent the year or end date.
+A missing/false product flag does not prove a business need for an alternative financial instrument;
+null means unknown, while false describes only the recorded bank flag, not products at all providers.
+When a payment endpoint UID is absent from the company table, its company attributes are unknown;
+do not invent its identity, industry, geography or business role.
 Separate reported facts, dated Alfa-Bank opinion, and conditional AI inference. Never attribute another bank's opinion to Alfa.
 Older sources are context, not fresh events; publication date unknown means temporal applicability is uncertain.
 Only cite source_ids actually returned by tools and fact_ids from the pinned profile.

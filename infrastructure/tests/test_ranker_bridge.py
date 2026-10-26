@@ -197,7 +197,16 @@ def test_real_rank_sql_http_callback_report_and_question(demo, fake_embeddings, 
     )
     assert answer.status_code == 202, answer.text
     payload = one("SELECT payload FROM jobs WHERE job_id=%s", (answer.json()["job_id"],))["payload"]
-    assert insights.question_job(payload)["sources"]
+    receipt = insights.question_job(payload)
+    assert receipt["sources"]
+    history = client.get(f"/api/reports/{report['report_id']}/discussions", headers=headers)
+    assert history.status_code == 200, history.text
+    messages = history.json()
+    assert [message["speaker"] for message in messages] == ["user", "assistant"]
+    assert {message["insight_id"] for message in messages} == {result["cards"][0]["insight_id"]}
+    assert messages[0]["source_details"] == []
+    assert {source["source_id"] for source in messages[1]["source_details"]} == {str(source_id) for source_id in receipt["sources"]}
+    assert {message["report_version_id"] for message in messages} == {result["version"]["report_version_id"]}
     invalid = client.post(
         f"/api/reports/{report['report_id']}/questions",
         headers=headers,

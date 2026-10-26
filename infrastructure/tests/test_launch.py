@@ -65,3 +65,59 @@ def test_engine_wrapper_selects_engine_and_forwards_arguments(tmp_path, engine):
         check=True,
     )
     assert result.stdout.splitlines() == [engine, str(folder), "launch.py", "--ui", "--check"]
+
+
+def test_local_llm_uses_approved_alias_without_changing_external_configuration(monkeypatch):
+    monkeypatch.delenv("INTERNAL_TOKEN", raising=False)
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://external.test/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "external-test-key")
+    env = launch.model_environment("INTERNAL_TOKEN=local-test-key\n", True)
+    assert env["OPENAI_MODEL"] == "qwen3.6-35b-a3b"
+    assert env["OPENAI_BASE_URL"] == "http://qwen-llm:8080/v1"
+    assert env["OPENAI_API_KEY"] == "local-test-key"
+    assert os.environ["OPENAI_API_KEY"] == "external-test-key"
+    external = launch.model_environment("", False)
+    assert external["OPENAI_BASE_URL"] == "https://external.test/v1"
+
+
+@pytest.mark.parametrize("mode", ["--with-qwen", "--without-qwen"])
+def test_mode_selects_models_without_discarding_data(tmp_path, monkeypatch, mode):
+    (tmp_path / ".env.example").write_text("OPENAI_API_KEY=test\nOPENAI_BASE_URL=https://llm.test/v1\n")
+    monkeypatch.setattr(launch, "HERE", tmp_path)
+    monkeypatch.setattr(launch.sys, "argv", ["launch.py", mode])
+    monkeypatch.setattr(launch, "engine_command", lambda: ["docker", "compose"])
+    monkeypatch.chdir(tmp_path)
+    calls = []
+    environments = []
+
+    def record_run(command, **kwargs):
+        calls.append(command)
+        environments.append(kwargs.get("env", {}))
+
+    monkeypatch.setattr(launch.subprocess, "run", record_run)
+    monkeypatch.setattr(launch.subprocess, "check_output", lambda *args, **kwargs: "t\n")
+    launch.main()
+    assert not any("down" in command or "-v" in command for command in calls)
+    if mode == "--with-qwen":
+        assert calls[0][2:4] == ["--profile", "local-llm"]
+        assert not any("stop" in command for command in calls)
+        assert any(command[-1] == "qwen-llm" and "--wait" in command for command in calls)
+        assert all(env["OPENAI_MODEL"] == "qwen3.6-35b-a3b" for env in environments)
+    else:
+        assert calls[0][2:] == ["config", "--quiet"]
+        assert any(command[-2:] == ["stop", "qwen-llm"] for command in calls)
+        assert "--profile" not in calls[-1]
+    assert "OPENAI_BASE_URL=https://llm.test/v1" in (tmp_path / ".env").read_text()
+
+
+def test_empty_bind_settings_use_working_defaults(monkeypatch):
+    monkeypatch.delenv("BACKEND_BIND_HOST", raising=False)
+    assert launch.setting("BACKEND_BIND_HOST=\n", "BACKEND_BIND_HOST", "127.0.0.1") == "127.0.0.1"
+
+
+def test_empty_env_value_does_not_consume_next_setting(monkeypatch):
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    monkeypatch.delenv("BACKEND_PORT", raising=False)
+    config = "OPENAI_BASE_URL=\nOPENAI_MODEL=qwen3.6-35b-a3b\nBACKEND_PORT=   \nDEMO_MODE=true\n"
+    assert launch.setting(config, "OPENAI_BASE_URL") == ""
+    assert launch.setting(config, "BACKEND_PORT", "8092") == "8092"

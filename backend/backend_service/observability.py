@@ -196,6 +196,42 @@ def snapshot(probe_services=True):
     }
 
 
+
+def public_snapshot():
+    """Read-only demo health; no identities, source contents, traces or exception text."""
+    worker_state = workers()
+    roles = []
+    for role in EXPECTED_WORKERS:
+        items = [worker for worker in worker_state["items"] if worker["role"] == role]
+        roles.append({
+            "role": role,
+            "alive": any(worker["alive"] for worker in items),
+            "running": sum(len(worker.get("running_jobs") or []) for worker in items),
+            "processed": sum(worker.get("processed", 0) for worker in items),
+            "failed": sum(worker.get("failed", 0) for worker in items),
+        })
+    return {
+        "generated_at": now(),
+        "mode": "demo",
+        "services": [
+            {
+                **{key: service[key] for key in ("name", "status", "latency_ms") if key in service},
+                "status": "configured" if service["name"] == "llm" and service["status"] == "ok"
+                else service["status"],
+            }
+            for service in services()
+        ],
+        "workers": roles,
+        "queues": [
+            {key: queue.get(key) for key in (
+                "kind", "ready", "retry_scheduled", "running", "failed_24h", "completed_1h",
+                "oldest_pending_s", "avg_run_s",
+            )}
+            for queue in queues()
+        ],
+    }
+
+
 def agent_runs(limit=50, agent=None, status=None, company_id=None):
     return all_rows(
         "SELECT a.agent_run_id,a.agent_name,a.company_id,a.user_id,a.status,a.llm_model,a.llm_tokens,a.tool_calls,"

@@ -31,16 +31,20 @@ Python versions are pinned in `uv.lock`; existing Parser/Embedding services reta
 
 ## Models and data
 
-- Generative calls use only the case-approved model allowlist in `../service-common/agent_common/runtime.py`.
+- Generative calls use only the case-approved model allowlist in `service-common/agent_common/runtime.py`.
   Default: Qwen3.6 35B A3B via the team's configured endpoint. No external autonomous AI service
   or ready-made multiagent framework is used as the solution's main component.
-- Qwen3 embedding is an existing non-generative retrieval component; confirm organizer policy
-  if the approved-model restriction is interpreted to cover embedding models too.
+- Qwen3 embedding and reranking are non-generative retrieval components; the generative
+  answer uses the separate case-approved LLM allowlist.
 - Bank CSVs and the nine supplied bank PDF materials are case-provided data, not datasets
   newly licensed by this implementation. Do not redistribute outside the authorized case context
   without checking permission. The synthetic IDs do not identify real people or organizations.
 - The source case CSV/PDF are included for an authorized private team/jury checkout.
   Do not publish this repository or its data publicly without checking case permissions.
+- Organizer Q&A defines company revenue as RUB for 2025; `1000` is a placeholder,
+  not actual revenue. Payment amounts are RUB; payment counts cover the period from
+  January 1, with the year unspecified. Payment links, group membership and customs
+  countries do not independently establish supply chains, product types or operating geography.
 - News/web content retains its original source and applicable publisher conditions. Storage
   and extraction do not transfer copyright. Respect terms, robots policies and access restrictions.
 
@@ -48,7 +52,7 @@ Python versions are pinned in `uv.lock`; existing Parser/Embedding services reta
 
 1. `bank-materials-source` is a simulated publication API, seeded from case PDFs. It is not an
    official Alfa-Bank endpoint. New materials can be published live to the simulation.
-2. `/admin/demo` and the automatic demo session associate fictional company names (five showcase
+2. `/admin/demo` and the automatic demo session associate fictional company names (the configured showcase
    synthetic rows with revenue above 15 bn, see `DEMO_COMPANIES`) with synthetic bank records and
    prefill editable example onboarding answers. This is not real identity resolution or production SSO.
 3. `retrieval-ranking` is included in this monorepo. Backend calls synchronous `/rank`, stores
@@ -56,5 +60,24 @@ Python versions are pinned in `uv.lock`; existing Parser/Embedding services reta
    public authentication endpoint and is not published on a host port.
 4. Unit/integration tests fake generative responses and embedding vectors. Those tests establish
    contracts and persistence, not real model accuracy. Mock OCR unit tests do not evaluate real OCR.
+   The proposed expert relevance/citation metrics have not been measured; no quality score is claimed.
 5. Docker images and OS packages need deployment-specific digest/version pinning for strict
    bit-for-bit reproducibility; language/application dependencies are locked.
+
+## Repository and deployment tools
+
+- Docker Engine / Docker Compose: container runtime and launch configuration; upstream
+  https://github.com/moby/moby and https://github.com/docker/compose, Apache-2.0.
+  Docker Desktop is a separate distribution with its own terms.
+- Podman: optional compatible container engine; https://github.com/containers/podman, Apache-2.0.
+- The editable architecture file uses the diagrams.net / draw.io XML format;
+  https://github.com/jgraph/drawio, Apache-2.0. The editor is not bundled in the service.
+- Optional llama.cpp server: https://github.com/ggml-org/llama.cpp, MIT.
+  Container image is pinned to `sha256:5741ab30aae42af23ca57d9b98a6d4544cb09c21f372f92c5ee55312fa8b8b0c`.
+- Optional local Qwen3.6-35B-A3B (Apache-2.0): https://huggingface.co/Qwen/Qwen3.6-35B-A3B.
+  GGUF quantization: https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF, Apache-2.0,
+  revision `9280dd353ab587157920d5bd391ada414d84e552`, file `Qwen3.6-35B-A3B-UD-Q4_K_M.gguf`.
+  This is quantized inference of the approved model, not a separately trained replacement.
+  The local launch profile does not download or use a generative model with another identity.
+- `--without-qwen` uses the deployer's configured approved generative endpoint; embedding
+  and reranking remain local in both modes. There are no canned LLM responses in production.

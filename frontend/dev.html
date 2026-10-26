@@ -7,27 +7,28 @@
 </head>
 <body>
 <header>
-  <b>Alpha · observability</b>
-  <form id="tokenForm"><input id="tokenInput" type="password" placeholder="ADMIN_TOKEN из infrastructure/.env" autocomplete="off"><button>Подключить</button></form>
+  <b>Альфа · состояние сервиса</b>
+  <details id="adminAccess"><summary>Доступ администратора</summary><form id="tokenForm"><input id="tokenInput" type="password" placeholder="ADMIN_TOKEN из infrastructure/.env" autocomplete="off"><button>Подключить</button><button id="publicMode" type="button">Общий обзор</button></form></details>
   <label><input id="autoRefresh" type="checkbox" checked> автообновление 5 с</label>
   <span id="updated"></span>
   <nav><a href="/admin/docs" target="_blank">Swagger</a> · <a href="/" target="_blank">Кабинет</a></nav>
 </header>
+<p id="accessMode" class="muted" role="status">Загружаем состояние сервиса…</p>
 <p id="error" class="error" hidden></p>
 <main>
   <section><h2>Сервисы</h2><div id="services" class="badges"></div></section>
   <section><h2>Воркеры</h2><p id="missingWorkers" class="warn" hidden></p><div id="workers"></div></section>
   <section><h2>Очереди задач</h2><div id="queues"></div></section>
-  <section><h2>Ошибки и повторы</h2><div id="failures"></div></section>
-  <section><h2>Агенты за 24 ч</h2><div id="agents"></div></section>
-  <section class="wide"><h2>Запуски агентов</h2>
+  <section id="failureSection" hidden><h2>Ошибки и повторы</h2><div id="failures"></div></section>
+  <section id="agentSection" hidden><h2>Агенты за 24 ч</h2><div id="agents"></div></section>
+  <section class="wide" id="runSection" hidden><h2>Запуски агентов</h2>
     <form id="runFilter"><select id="runAgent"><option value="">все агенты</option><option>company_profiler</option><option>insight_agent</option></select>
       <select id="runStatus"><option value="">все статусы</option><option>running</option><option>completed</option><option>failed</option></select>
       <input id="runCompany" placeholder="company_id"><button>Показать</button></form>
     <div id="runs"></div><div id="trace"></div></section>
-  <section><h2>Инструменты за 24 ч</h2><div id="tools"></div></section>
-  <section><h2>Данные</h2><div id="data"></div></section>
-  <section class="wide"><h2>Prometheus</h2><pre>curl -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8092/api/admin/metrics/prometheus</pre>
+  <section id="toolSection" hidden><h2>Инструменты за 24 ч</h2><div id="tools"></div></section>
+  <section id="dataSection" hidden><h2>Данные</h2><div id="data"></div></section>
+  <section class="wide" id="prometheusSection" hidden><h2>Prometheus</h2><pre>curl -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8092/api/admin/metrics/prometheus</pre>
     <p class="muted">Логи воркеров: <code>podman compose logs -f profiler-worker</code> — строки <code>job_finished kind=… duration_ms=…</code>.</p></section>
 </main>
 <script src="/frontend/dev.js"></script>

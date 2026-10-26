@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 from fastapi import HTTPException
 from agent_common.core import encode as jsonable_encoder
 
+from agent_common.bank_semantics import normalize_company_record
 from agent_common.contracts import AgentScope, FetchArgs, ReadArgs, SearchArgs, WebArgs
 from agent_common.core import all_rows, db, digest, j, membership, now, one, settings
 from agent_common.embeddings import config, embed, vector_literal
@@ -106,16 +107,18 @@ def context(scope):
 
 def bank_data(scope):
     rows = all_rows(
-        "SELECT b.*,s.source_as_of,s.currency,s.revenue_year FROM bank_company_data b "
+        "SELECT b.*,s.source_as_of,s.currency,s.revenue_year,s.source_filename FROM bank_company_data b "
         "JOIN bank_import_batches s USING(source_snapshot_id) "
         "WHERE b.company_id=%s AND s.status='ready' ORDER BY s.imported_at DESC,b.bank_record_id LIMIT 30",
         (scope.company_id,),
     )
     sources = []
-    # Bank facts remain reported values with unknown units/periods, never guessed.
     with db() as conn:
-        for row in rows:
+        for raw_row in rows:
+            row = normalize_company_record(raw_row)
             ref = {"bank_record_id": row["bank_record_id"], "snapshot_id": str(row["source_snapshot_id"])}
+            if row.get("interpretation_version"):
+                ref["interpretation_version"] = row["interpretation_version"]
             existing = conn.execute(
                 "SELECT * FROM evidence_sources WHERE company_id=%s AND source_type='bank_import' "
                 "AND source_ref=%s LIMIT 1",
@@ -129,20 +132,27 @@ def bank_data(scope):
                     (scope.company_id, j(ref), excerpt),
                 ).fetchone()
             sources.append(existing)
+    payment_rows = (
+        "normalized_payments AS (SELECT p.source_snapshot_id,p.payer,p.beneficiary,p.pay_amt,p.pay_cnt,"
+        "p.aggregation_from,p.aggregation_to,CASE WHEN b.source_filename='df_Uid_payment_hack.csv' "
+        "THEN 'RUB' ELSE p.currency END AS currency FROM bank_payment_edges p "
+        "JOIN bank_import_batches b USING(source_snapshot_id) WHERE b.status='ready') "
+    )
     payments = all_rows(
+        "WITH " + payment_rows +
         "SELECT source_snapshot_id,currency,aggregation_from,aggregation_to,"
         "CASE WHEN payer=%s THEN 'outgoing' ELSE 'incoming' END AS direction,"
         "count(*) AS edges,sum(pay_amt) AS amount,sum(pay_cnt) AS payments "
-        "FROM bank_payment_edges WHERE (payer=%s OR beneficiary=%s) AND payer<>beneficiary "
+        "FROM normalized_payments WHERE (payer=%s OR beneficiary=%s) AND payer<>beneficiary "
         "AND source_snapshot_id IN(SELECT source_snapshot_id FROM bank_import_batches WHERE status='ready') "
         "GROUP BY source_snapshot_id,currency,aggregation_from,aggregation_to,direction",
         (scope.company_id, scope.company_id, scope.company_id),
     )
     counterparties = all_rows(
-        "WITH grouped AS (SELECT source_snapshot_id,currency,aggregation_from,aggregation_to,"
+        "WITH " + payment_rows + ", grouped AS (SELECT source_snapshot_id,currency,aggregation_from,aggregation_to,"
         "CASE WHEN payer=%s THEN 'outgoing' ELSE 'incoming' END AS direction,"
         "CASE WHEN payer=%s THEN beneficiary ELSE payer END AS counterparty,sum(pay_amt) AS amount "
-        "FROM bank_payment_edges WHERE (payer=%s OR beneficiary=%s) AND payer<>beneficiary "
+        "FROM normalized_payments WHERE (payer=%s OR beneficiary=%s) AND payer<>beneficiary "
         "AND source_snapshot_id IN(SELECT source_snapshot_id FROM bank_import_batches WHERE status='ready') "
         "GROUP BY 1,2,3,4,5,6), scored AS (SELECT *,amount/nullif(sum(amount) OVER "
         "(PARTITION BY source_snapshot_id,currency,aggregation_from,aggregation_to,direction),0) AS share,"
@@ -177,7 +187,8 @@ def bank_data(scope):
             "aggregates": payments,
             "top_counterparties": counterparties,
             "limitations": "Shares cover only observed amounts; self transfers excluded. Unknown currency/period stays unknown. "
-            "Shared synthetic person links do not establish ownership, control, job role or real identity.",
+            "Shared synthetic person links do not establish ownership, control, job role or real identity. "
+            "Payment edges do not establish supplier/customer roles; unknown counterparty attributes stay unknown.",
         }
         ref = {"method": "company-exposure-v1", "input_hash": digest(analytics)}
         with db() as conn:
@@ -207,7 +218,11 @@ def bank_data(scope):
         "limitations": [
             "Shared synthetic person links do not establish ownership, control, job role or real identity.",
             "At most 30 bank company records are shown; repeated IDs may contain conflicting attributes.",
-            "Currency, revenue year and payment period may be unknown.",
+            "The supplied company CSV reports 2025 revenue in RUB; 1000 means unavailable, not actual revenue.",
+            "The supplied payment CSV amounts are RUB, accumulated since January 1; the year/end date are not supplied.",
+            "Other payment sources need their own currency and period metadata.",
+            "Customs countries do not establish import/export direction, products or routes.",
+            "Payment links do not prove supplier/customer roles. Missing counterparties have unknown attributes.",
             "Synthetic identities cannot be mapped to real organizations.",
             "Loan product presence does not establish debt balance or floating interest rate.",
         ],

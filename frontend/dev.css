@@ -16,3 +16,5 @@ pre{background:#f7f8fa;padding:8px;border-radius:6px;white-space:pre-wrap;word-b
 #trace h3{font-size:13px;margin:16px 0 6px}#runFilter{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
 details summary{cursor:pointer}
 @media(max-width:1000px){main{grid-template-columns:1fr}}
+
+[hidden]{display:none!important}#accessMode{padding:12px 18px;margin:0}#adminAccess form{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}#publicMode{background:#555}

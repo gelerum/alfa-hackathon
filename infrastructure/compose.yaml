@@ -1,6 +1,5 @@
 name: alpha
 
-# Single entry point for the complete stack, including backend and frontend.
 include:
   - path: ./application.compose.yaml
 
@@ -66,7 +65,45 @@ services:
       retries: 10
       start_period: 1m
 
+  qwen-llm:
+    profiles: [local-llm]
+    image: ${QWEN_IMAGE:-ghcr.io/ggml-org/llama.cpp:server@sha256:5741ab30aae42af23ca57d9b98a6d4544cb09c21f372f92c5ee55312fa8b8b0c}
+    restart: unless-stopped
+    init: true
+    environment:
+      LLAMA_API_KEY: ${INTERNAL_TOKEN:?Set INTERNAL_TOKEN in infrastructure/.env}
+    command:
+      - --model-url
+      - ${QWEN_MODEL_URL:-https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/9280dd353ab587157920d5bd391ada414d84e552/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf}
+      - --model
+      - /models/qwen3.6-35b-a3b.gguf
+      - --alias
+      - qwen3.6-35b-a3b
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8080'
+      - --ctx-size
+      - '${QWEN_CONTEXT_SIZE:-32768}'
+      - --parallel
+      - '1'
+      - --threads
+      - '${QWEN_THREADS:-8}'
+      - --jinja
+      - --no-mmproj
+      - --chat-template-kwargs
+      - '{"enable_thinking":false}'
+    volumes:
+      - qwen_model_cache:/models
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:8080/health']
+      interval: 15s
+      timeout: 5s
+      start_period: 60m
+      retries: 5
+
 volumes:
+  qwen_model_cache:
   postgres_data:
   model_cache:
   searxng_cache:
