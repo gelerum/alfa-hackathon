@@ -15,8 +15,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-alfa}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alfa_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-alfa_hack}
-    ports:
-      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -36,8 +34,6 @@ services:
       MAX_INPUT_TOKENS: ${MAX_INPUT_TOKENS:-2048}
       HF_HOME: /models
       TOKENIZERS_PARALLELISM: 'false'
-    ports:
-      - '127.0.0.1:${EMBEDDING_PORT:-8001}:8000'
     volumes:
       - model_cache:/models
     healthcheck:
@@ -56,12 +52,10 @@ services:
         BASE_IMAGE: ${SEARXNG_IMAGE:-docker.io/searxng/searxng:latest}
     restart: unless-stopped
     environment:
-      SEARXNG_BASE_URL: http://localhost:${SEARXNG_PORT:-8080}/
+      SEARXNG_BASE_URL: http://searxng:8080/
       SEARXNG_SECRET: ${SEARXNG_SECRET:?Set SEARXNG_SECRET in infrastructure/.env}
       FORCE_OWNERSHIP: 'false'
       SEARXNG_PORT: '8080'
-    ports:
-      - '127.0.0.1:${SEARXNG_PORT:-8080}:8080'
     volumes:
       - searxng_cache:/var/cache/searxng
     healthcheck:

@@ -80,7 +80,11 @@ services:
     environment:
       <<: *environment
       DEMO_MODE: ${DEMO_MODE:-true}
-    ports: ['127.0.0.1:8092:8000']
+    ports:
+      - target: 8000
+        published: '${BACKEND_PORT:-8092}'
+        host_ip: '${BACKEND_BIND_HOST:-127.0.0.1}'
+        protocol: tcp
     healthcheck:
       test: ['CMD', 'python', '-c', 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/api/health",timeout=3)']
       interval: 15s
@@ -89,15 +93,12 @@ services:
   tool-gateway:
     <<: *app
     command: ['uvicorn', 'tool_gateway_service.api:app', '--host', '0.0.0.0', '--port', '8000']
-    ports: ['127.0.0.1:8090:8000']
   company-user-profiler:
     <<: *app
     command: ['uvicorn', 'profiler_service.api:create_profiler', '--factory', '--host', '0.0.0.0', '--port', '8000']
-    ports: ['127.0.0.1:8093:8000']
   insight-agent:
     <<: *app
     command: ['uvicorn', 'insight_service.api:create_insight', '--factory', '--host', '0.0.0.0', '--port', '8000']
-    ports: ['127.0.0.1:8094:8000']
   bank-materials-source:
     <<: *app
     command: ['uvicorn', 'bank_source_service.api:app', '--host', '0.0.0.0', '--port', '8000']
@@ -107,7 +108,6 @@ services:
       BANK_SOURCE_SEED_DIR: /workspace/bank-materials-source/materials
     volumes:
       - bank_source_data:/bank-data
-    ports: ['127.0.0.1:8091:8000']
     depends_on: {}
   backend-worker:
     <<: *app

@@ -86,7 +86,18 @@ def main():
     subprocess.run(
         command + ["up", "-d", "--build", "--wait", "--wait-timeout", "1200"] + services, check=True
     )
-    print("\nАльфа-Бизнес: http://localhost:8092/ — демо-вход автоматический.")
+
+    def setting(name, default):
+        match = re.search(r"^" + name + r"\s*=\s*([^\n#]*)", config, re.MULTILINE)
+        return match.group(1).strip().strip("\"'") if match else default
+
+    host = os.environ.get("BACKEND_BIND_HOST") or setting("BACKEND_BIND_HOST", "127.0.0.1")
+    port = os.environ.get("BACKEND_PORT") or setting("BACKEND_PORT", "8092")
+    if host in ("0.0.0.0", "::"):
+        host = "localhost"
+    elif ":" in host:
+        host = "[" + host + "]"
+    print(f"\nАльфа-Бизнес: http://{host}:{port}/ — демо-вход автоматический.")
 
 
 if __name__ == "__main__":
